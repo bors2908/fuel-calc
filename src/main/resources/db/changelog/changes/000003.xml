@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <createTable tableName="price_periods">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="price_periods_pk"/>
+            </column>
+            <column name="period_key" type="varchar(96)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="basis" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="frequency" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reference_date" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="start_date" type="date">
+            </column>
+            <column name="end_date" type="date">
+            </column>
+            <column name="label" type="varchar(128)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="price_periods" columnNames="period_key" constraintName="price_periods_uk1"/>
+        <addUniqueConstraint
+            tableName="price_periods"
+            columnNames="basis,frequency,reference_date"
+            constraintName="price_periods_uk2"/>
+    </changeSet>
+
+    <changeSet id="2" author="fuel-calc">
+        <createTable tableName="regional_price_keys">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="regional_price_keys_pk"/>
+            </column>
+            <column name="region_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="fuel_type_code" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="period_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider_code" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="current_observation_id" type="bigint">
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+            tableName="regional_price_keys"
+            columnNames="region_id,fuel_type_code,period_id,provider_code"
+            constraintName="regional_price_keys_uk1"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_keys"
+            baseColumnNames="region_id"
+            referencedTableName="regions"
+            referencedColumnNames="id"
+            constraintName="regional_price_keys_fk1"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_keys"
+            baseColumnNames="fuel_type_code"
+            referencedTableName="fuel_types"
+            referencedColumnNames="code"
+            constraintName="regional_price_keys_fk2"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_keys"
+            baseColumnNames="period_id"
+            referencedTableName="price_periods"
+            referencedColumnNames="id"
+            constraintName="regional_price_keys_fk3"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_keys"
+            baseColumnNames="provider_code"
+            referencedTableName="data_sources"
+            referencedColumnNames="code"
+            constraintName="regional_price_keys_fk5"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="regional_price_keys" indexName="regional_price_keys_fk2_idx">
+            <column name="fuel_type_code"/>
+        </createIndex>
+        <createIndex tableName="regional_price_keys" indexName="regional_price_keys_fk3_idx">
+            <column name="period_id"/>
+            <column name="region_id"/>
+            <column name="fuel_type_code"/>
+            <column name="provider_code"/>
+        </createIndex>
+        <createIndex tableName="regional_price_keys" indexName="regional_price_keys_fk5_idx">
+            <column name="provider_code"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="3" author="fuel-calc">
+        <createTable tableName="regional_price_observations">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="regional_price_observations_pk"/>
+            </column>
+            <column name="price_key_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="publication_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="price_rub_per_liter" type="numeric">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+            tableName="regional_price_observations"
+            columnNames="publication_id,price_key_id"
+            constraintName="regional_price_observations_uk1"/>
+        <addUniqueConstraint
+            tableName="regional_price_observations"
+            columnNames="id,price_key_id"
+            constraintName="regional_price_observations_uk2"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_observations"
+            baseColumnNames="price_key_id"
+            referencedTableName="regional_price_keys"
+            referencedColumnNames="id"
+            constraintName="regional_price_observations_fk1"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_observations"
+            baseColumnNames="publication_id"
+            referencedTableName="source_publications"
+            referencedColumnNames="id"
+            constraintName="regional_price_observations_fk2"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="regional_price_observations" indexName="regional_price_observations_fk1_idx">
+            <column name="price_key_id"/>
+            <column name="id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="4" author="fuel-calc">
+        <addForeignKeyConstraint
+            baseTableName="regional_price_keys"
+            baseColumnNames="current_observation_id,id"
+            referencedTableName="regional_price_observations"
+            referencedColumnNames="id,price_key_id"
+            constraintName="regional_price_keys_fk4"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="regional_price_keys" indexName="regional_price_keys_fk4_idx">
+            <column name="current_observation_id"/>
+            <column name="id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

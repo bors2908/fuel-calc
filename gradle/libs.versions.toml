@@ -24,6 +24,7 @@ spring-boot-starter-webclient = { module = "org.springframework.boot:spring-boot
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
 spring-boot-starter-liquibase = { module = "org.springframework.boot:spring-boot-starter-liquibase" }
+spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
 jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
 postgresql = { module = "org.postgresql:postgresql" }
 
@@ -46,6 +47,7 @@ backend = [
   "spring-boot-starter-validation",
   "spring-boot-starter-data-jpa",
   "spring-boot-starter-liquibase",
+  "spring-boot-starter-actuator",
   "jackson-module-kotlin",
   "kotlin-reflect",
 ]

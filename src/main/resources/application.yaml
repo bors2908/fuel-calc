@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: fuel-calc
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:55432}/${POSTGRES_DB:fuel_calc}
+    username: ${POSTGRES_USER:fuel_calc}
+    password: ${POSTGRES_PASSWORD:fuel_calc}
+  liquibase:
+    change-log: classpath:/db/changelog/master.xml
+    database-change-log-table: db_migration_log
+    database-change-log-lock-table: db_migration_lock
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

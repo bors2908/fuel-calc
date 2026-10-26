@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <createTable tableName="regions">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="regions_pk"/>
+            </column>
+            <column name="code" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="regions" columnNames="code" constraintName="regions_uk1"/>
+    </changeSet>
+
+    <changeSet id="2" author="fuel-calc">
+        <createTable tableName="fuel_types">
+            <column name="code" type="varchar(16)">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="fuel_types_pk"/>
+            </column>
+            <column name="name" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sort_order" type="integer">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="3" author="fuel-calc">
+        <createTable tableName="data_sources">
+            <column name="code" type="varchar(32)">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="data_sources_pk"/>
+            </column>
+            <column name="name" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="url" type="text">
+            </column>
+        </createTable>
+    </changeSet>
+
+</databaseChangeLog>

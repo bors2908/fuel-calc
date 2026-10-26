@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <createTable tableName="source_fetch_states">
+            <column name="feed_id" type="bigint">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="source_fetch_states_pk"/>
+            </column>
+            <column name="backfill_next_from" type="date">
+            </column>
+            <column name="backfill_until" type="date">
+            </column>
+            <column name="backfill_completed_at" type="timestamp with time zone">
+            </column>
+            <column name="reconciliation_next_from" type="date">
+            </column>
+            <column name="reconciliation_until" type="date">
+            </column>
+            <column name="last_reconciled_at" type="timestamp with time zone">
+            </column>
+            <column name="next_fetch_not_before" type="timestamp with time zone">
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="source_fetch_states"
+            baseColumnNames="feed_id"
+            referencedTableName="source_feeds"
+            referencedColumnNames="id"
+            constraintName="source_fetch_states_fk1"
+            onDelete="RESTRICT"/>
+        <sql>
+            <![CDATA[
+            ALTER TABLE source_fetch_states
+                ADD CONSTRAINT source_fetch_states_ck1 CHECK (
+                    (backfill_next_from IS NULL
+                    AND
+                    backfill_until IS NULL)
+                    OR
+                    (backfill_next_from IS NOT NULL
+                    AND
+                    backfill_until IS NOT NULL
+                    AND
+                    backfill_next_from <= backfill_until)
+                );
+
+            ALTER TABLE source_fetch_states
+                ADD CONSTRAINT source_fetch_states_ck2 CHECK (
+                    (reconciliation_next_from IS NULL
+                    AND
+                    reconciliation_until IS NULL)
+                    OR
+                    (reconciliation_next_from IS NOT NULL
+                    AND
+                    reconciliation_until IS NOT NULL
+                    AND
+                    reconciliation_next_from <= reconciliation_until)
+                );
+
+            ALTER TABLE source_fetch_states
+                ADD CONSTRAINT source_fetch_states_ck3 CHECK (
+                    backfill_completed_at IS NULL
+                    OR
+                    (backfill_next_from IS NULL
+                    AND
+                    backfill_until IS NULL)
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

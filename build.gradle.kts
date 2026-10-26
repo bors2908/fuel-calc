@@ -3,8 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.spring)
     alias(libs.plugins.kotlin.jpa)
 
-    // Apply when the application entry point is implemented.
-    alias(libs.plugins.spring.boot) apply false
+    alias(libs.plugins.spring.boot)
 }
 
 dependencies {

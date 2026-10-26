@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <createTable tableName="regional_price_samples">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="regional_price_samples_pk"/>
+            </column>
+            <column name="provider_code" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="region_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="fuel_type_code" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sample_date" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sampling_policy_code" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="price_rub_per_liter" type="numeric">
+                <constraints nullable="false"/>
+            </column>
+            <column name="station_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="collected_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="oldest_price_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="newest_price_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_import_run_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="content_hash" type="char(64)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addUniqueConstraint
+            tableName="regional_price_samples"
+            columnNames="provider_code,region_id,fuel_type_code,sample_date,sampling_policy_code,collected_at"
+            constraintName="regional_price_samples_uk1"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_samples"
+            baseColumnNames="provider_code"
+            referencedTableName="data_sources"
+            referencedColumnNames="code"
+            constraintName="regional_price_samples_fk1"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_samples"
+            baseColumnNames="region_id"
+            referencedTableName="regions"
+            referencedColumnNames="id"
+            constraintName="regional_price_samples_fk2"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_samples"
+            baseColumnNames="fuel_type_code"
+            referencedTableName="fuel_types"
+            referencedColumnNames="code"
+            constraintName="regional_price_samples_fk3"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="regional_price_samples"
+            baseColumnNames="first_import_run_id"
+            referencedTableName="import_runs"
+            referencedColumnNames="id"
+            constraintName="regional_price_samples_fk4"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="regional_price_samples" indexName="regional_price_samples_fk2_idx">
+            <column name="region_id"/>
+            <column name="fuel_type_code"/>
+            <column name="sample_date"/>
+            <column name="collected_at"/>
+            <column name="id"/>
+        </createIndex>
+        <createIndex tableName="regional_price_samples" indexName="regional_price_samples_fk3_idx">
+            <column name="fuel_type_code"/>
+        </createIndex>
+        <createIndex tableName="regional_price_samples" indexName="regional_price_samples_fk4_idx">
+            <column name="first_import_run_id"/>
+        </createIndex>
+        <sql>
+            <![CDATA[
+            ALTER TABLE regional_price_samples
+                ADD CONSTRAINT regional_price_samples_ck1 CHECK (
+                    price_rub_per_liter >= 0
+                    AND
+                    price_rub_per_liter NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+                    AND
+                    length(price_rub_per_liter::text) <= 64
+                );
+
+            ALTER TABLE regional_price_samples
+                ADD CONSTRAINT regional_price_samples_ck2 CHECK (
+                    provider_code = 'WHEREFUEL'
+                    AND
+                    station_count > 0
+                    AND
+                    (sampling_policy_code <> 'TOP20_FRESH7D_MIN5_V1'
+                    OR
+                    station_count BETWEEN 5
+                    AND
+                    20)
+                );
+
+            ALTER TABLE regional_price_samples
+                ADD CONSTRAINT regional_price_samples_ck3 CHECK (
+                    oldest_price_at <= newest_price_at
+                    AND
+                    newest_price_at <= collected_at
+                    AND
+                    sample_date = (collected_at AT TIME ZONE 'Europe/Moscow')::date
+                    AND
+                    (sampling_policy_code <> 'TOP20_FRESH7D_MIN5_V1'
+                    OR
+                    oldest_price_at >= collected_at - INTERVAL '7 days')
+                );
+
+            ALTER TABLE regional_price_samples
+                ADD CONSTRAINT regional_price_samples_ck4 CHECK (
+                    content_hash ~ '^[0-9a-f]{64}$'
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="2" author="fuel-calc">
+        <addColumn tableName="regional_price_observations">
+            <column name="sample_min_station_count" type="integer"/>
+            <column name="sample_day_count" type="integer"/>
+            <column name="sample_expected_day_count" type="integer"/>
+            <column name="sample_collected_at" type="timestamp with time zone"/>
+        </addColumn>
+        <sql>
+            <![CDATA[
+            ALTER TABLE regional_price_observations
+                ADD CONSTRAINT regional_price_observations_ck2 CHECK (
+                    (sample_min_station_count IS NULL
+                    AND
+                    sample_day_count IS NULL
+                    AND
+                    sample_expected_day_count IS NULL
+                    AND
+                    sample_collected_at IS NULL)
+                    OR
+                    (sample_min_station_count IS NOT NULL
+                    AND
+                    sample_day_count IS NOT NULL
+                    AND
+                    sample_expected_day_count IS NOT NULL
+                    AND
+                    sample_collected_at IS NOT NULL
+                    AND
+                    sample_min_station_count BETWEEN 5
+                    AND
+                    20
+                    AND
+                    sample_day_count BETWEEN 1
+                    AND
+                    sample_expected_day_count
+                    AND
+                    sample_expected_day_count BETWEEN 1
+                    AND
+                    31)
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

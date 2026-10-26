@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE fuel_types
+                ADD CONSTRAINT fuel_types_ck1 CHECK (
+                    code IN ('DIESEL', 'AI_92', 'AI_95')
+                    AND
+                    sort_order >= 0
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="2" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE source_feeds
+                ADD CONSTRAINT source_feeds_ck1 CHECK (
+                    frequency IN ('WEEKLY', 'MONTHLY')
+                    AND
+                    aggregation_method IN ('OFFICIAL_STATISTICS', 'STATION_SAMPLE_MEAN')
+                    AND
+                    update_status IN ('READY', 'DELAYED', 'UNAVAILABLE', 'UNKNOWN')
+                );
+
+            ALTER TABLE source_feeds
+                ADD CONSTRAINT source_feeds_ck2 CHECK (
+                    (aggregation_method = 'OFFICIAL_STATISTICS'
+                    AND
+                    sampling_policy_code IS NULL)
+                    OR
+                    (aggregation_method = 'STATION_SAMPLE_MEAN'
+                    AND
+                    sampling_policy_code IS NOT NULL
+                    AND
+                    length(trim(sampling_policy_code)) > 0)
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="3" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE import_runs
+                ADD CONSTRAINT import_runs_ck1 CHECK (
+                    status IN ('RUNNING', 'SUCCEEDED', 'FAILED')
+                    AND
+                    imported_count >= 0
+                    AND
+                    rejected_count >= 0
+                );
+
+            ALTER TABLE import_runs
+                ADD CONSTRAINT import_runs_ck2 CHECK (
+                    (status = 'RUNNING'
+                    AND
+                    finished_at IS NULL)
+                    OR
+                    (status IN ('SUCCEEDED', 'FAILED')
+                    AND
+                    finished_at IS NOT NULL
+                    AND
+                    finished_at >= started_at)
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="4" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE source_publications
+                ADD CONSTRAINT source_publications_ck1 CHECK (
+                    content_hash ~ '^[0-9a-f]{64}$'
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="5" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE price_periods
+                ADD CONSTRAINT price_periods_ck1 CHECK (
+                    basis = 'REGIONAL_CONSUMER_AVERAGE'
+                    AND
+                    frequency IN ('WEEKLY', 'MONTHLY')
+                );
+
+            ALTER TABLE price_periods
+                ADD CONSTRAINT price_periods_ck2 CHECK (
+                    (frequency = 'WEEKLY'
+                    AND
+                    ((start_date IS NULL
+                    AND
+                    end_date IS NULL)
+                    OR
+                    (start_date IS NOT NULL
+                    AND
+                    end_date IS NOT NULL
+                    AND
+                    start_date <= reference_date
+                    AND
+                    reference_date <= end_date)))
+                    OR
+                    (frequency = 'MONTHLY'
+                    AND
+                    start_date IS NOT NULL
+                    AND
+                    end_date IS NOT NULL
+                    AND
+                    start_date = date_trunc('month', start_date::timestamp)::date
+                    AND
+                    end_date = (start_date + INTERVAL '1 month - 1 day')::date
+                    AND
+                    reference_date = end_date)
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="6" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE regional_price_keys
+                ADD CONSTRAINT regional_price_keys_ck1 CHECK (
+                    provider_code IN ('ROSSTAT', 'RUSTATA', 'WHEREFUEL')
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="7" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE regional_price_observations
+                ADD CONSTRAINT regional_price_observations_ck1 CHECK (
+                    price_rub_per_liter >= 0
+                    AND
+                    price_rub_per_liter NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+                    AND
+                    length(price_rub_per_liter::text) <= 64
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+    <changeSet id="8" author="fuel-calc">
+        <sql>
+            <![CDATA[
+            ALTER TABLE archive_state
+                ADD CONSTRAINT archive_state_ck1 CHECK (
+                    id = 1
+                    AND
+                    revision >= 1
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

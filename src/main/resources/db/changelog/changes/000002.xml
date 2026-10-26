@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <createTable tableName="source_feeds">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="source_feeds_pk"/>
+            </column>
+            <column name="code" type="varchar(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="publisher_code" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="provider_code" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="external_code" type="varchar(256)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="frequency" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="aggregation_method" type="varchar(32)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sampling_policy_code" type="varchar(64)">
+            </column>
+            <column name="enabled" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="update_status" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_success_at" type="timestamp with time zone">
+            </column>
+            <column name="next_expected_publication_at" type="timestamp with time zone">
+            </column>
+            <column name="update_message" type="text">
+            </column>
+        </createTable>
+        <addUniqueConstraint tableName="source_feeds" columnNames="code" constraintName="source_feeds_uk1"/>
+        <addForeignKeyConstraint
+            baseTableName="source_feeds"
+            baseColumnNames="publisher_code"
+            referencedTableName="data_sources"
+            referencedColumnNames="code"
+            constraintName="source_feeds_fk1"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="source_feeds"
+            baseColumnNames="provider_code"
+            referencedTableName="data_sources"
+            referencedColumnNames="code"
+            constraintName="source_feeds_fk2"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="source_feeds" indexName="source_feeds_fk1_idx">
+            <column name="publisher_code"/>
+        </createIndex>
+        <createIndex tableName="source_feeds" indexName="source_feeds_fk2_idx">
+            <column name="provider_code"/>
+            <column name="external_code"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="2" author="fuel-calc">
+        <createTable tableName="import_runs">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="import_runs_pk"/>
+            </column>
+            <column name="feed_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="started_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="finished_at" type="timestamp with time zone">
+            </column>
+            <column name="status" type="varchar(16)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="imported_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="rejected_count" type="integer">
+                <constraints nullable="false"/>
+            </column>
+            <column name="error_code" type="varchar(64)">
+            </column>
+            <column name="error_message" type="text">
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="import_runs"
+            baseColumnNames="feed_id"
+            referencedTableName="source_feeds"
+            referencedColumnNames="id"
+            constraintName="import_runs_fk1"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="import_runs" indexName="import_runs_fk1_idx">
+            <column name="feed_id"/>
+            <column name="started_at"/>
+            <column name="id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="3" author="fuel-calc">
+        <createTable tableName="source_publications">
+            <column name="id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true" primaryKeyName="source_publications_pk"/>
+            </column>
+            <column name="feed_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="first_import_run_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="external_key" type="varchar(512)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="external_publication_id" type="varchar(512)">
+            </column>
+            <column name="content_hash" type="char(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="publication_date" type="date">
+            </column>
+            <column name="published_at" type="timestamp with time zone">
+            </column>
+            <column name="loaded_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="publication_url" type="text">
+            </column>
+            <column name="attribution" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="methodology_url" type="text">
+            </column>
+            <column name="note" type="text">
+            </column>
+        </createTable>
+        <addUniqueConstraint
+            tableName="source_publications"
+            columnNames="feed_id,external_key,content_hash"
+            constraintName="source_publications_uk1"/>
+        <addForeignKeyConstraint
+            baseTableName="source_publications"
+            baseColumnNames="feed_id"
+            referencedTableName="source_feeds"
+            referencedColumnNames="id"
+            constraintName="source_publications_fk1"
+            onDelete="RESTRICT"/>
+        <addForeignKeyConstraint
+            baseTableName="source_publications"
+            baseColumnNames="first_import_run_id"
+            referencedTableName="import_runs"
+            referencedColumnNames="id"
+            constraintName="source_publications_fk2"
+            onDelete="RESTRICT"/>
+        <createIndex tableName="source_publications" indexName="source_publications_fk2_idx">
+            <column name="first_import_run_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>
