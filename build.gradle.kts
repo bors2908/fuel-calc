@@ -1,22 +1,39 @@
 plugins {
-    kotlin("jvm") version "2.4.20"
-}
+    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.spring)
+    alias(libs.plugins.kotlin.jpa)
 
-group = "ge.becrin"
-version = "1.0-SNAPSHOT"
-
-repositories {
-    mavenCentral()
+    // Apply when the application entry point is implemented.
+    alias(libs.plugins.spring.boot) apply false
 }
 
 dependencies {
-    testImplementation(kotlin("test"))
+    implementation(platform(libs.spring.boot.bom))
+    implementation(platform(libs.kotlin.bom))
+    implementation(libs.bundles.backend)
+    implementation(libs.bundles.data.parsers)
+
+    runtimeOnly(libs.postgresql)
+
+    testImplementation(libs.bundles.testing)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(libs.versions.java.get().toInt())
+
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xjsr305=strict",
+            "-Xannotation-default-target=param-property",
+        )
+    }
 }
 
-tasks.test {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+
+    testLogging {
+        events("failed", "skipped")
+    }
 }

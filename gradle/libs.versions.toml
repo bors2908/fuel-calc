@@ -1,0 +1,62 @@
+[versions]
+java = "25"
+kotlin = "2.4.20"
+spring-boot = "4.1.2"
+commons-csv = "1.14.1"
+apache-poi = "5.5.1"
+mockito-kotlin = "6.2.3"
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+kotlin-jpa = { id = "org.jetbrains.kotlin.plugin.jpa", version.ref = "kotlin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+
+[libraries]
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "spring-boot" }
+kotlin-bom = { module = "org.jetbrains.kotlin:kotlin-bom", version.ref = "kotlin" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+kotlin-test-junit5 = { module = "org.jetbrains.kotlin:kotlin-test-junit5", version.ref = "kotlin" }
+
+# Versions below are managed by the Spring Boot BOM.
+spring-boot-starter-webmvc = { module = "org.springframework.boot:spring-boot-starter-webmvc" }
+spring-boot-starter-webclient = { module = "org.springframework.boot:spring-boot-starter-webclient" }
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
+spring-boot-starter-data-jpa = { module = "org.springframework.boot:spring-boot-starter-data-jpa" }
+spring-boot-starter-liquibase = { module = "org.springframework.boot:spring-boot-starter-liquibase" }
+jackson-module-kotlin = { module = "tools.jackson.module:jackson-module-kotlin" }
+postgresql = { module = "org.postgresql:postgresql" }
+
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+spring-boot-starter-data-jpa-test = { module = "org.springframework.boot:spring-boot-starter-data-jpa-test" }
+spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+
+commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commons-csv" }
+apache-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "apache-poi" }
+mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
+
+[bundles]
+backend = [
+  "spring-boot-starter-webmvc",
+  "spring-boot-starter-webclient",
+  "spring-boot-starter-validation",
+  "spring-boot-starter-data-jpa",
+  "spring-boot-starter-liquibase",
+  "jackson-module-kotlin",
+  "kotlin-reflect",
+]
+data-parsers = ["commons-csv", "apache-poi-ooxml"]
+testing = [
+  "spring-boot-starter-test",
+  "spring-boot-starter-webmvc-test",
+  "spring-boot-starter-data-jpa-test",
+  "spring-boot-testcontainers",
+  "kotlin-test-junit5",
+  "mockito-kotlin",
+  "testcontainers-junit-jupiter",
+  "testcontainers-postgresql",
+]
