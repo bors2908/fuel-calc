@@ -1,5 +1,16 @@
 package ge.becrin.fuelcalc
 
+import ge.becrin.fuelcalc.prices.service.RegionalPricePublicationService
+import ge.becrin.fuelcalc.prices.service.RegionalPriceSampleService
+import ge.becrin.fuelcalc.sources.jpa.ImportStore
+import ge.becrin.fuelcalc.sources.model.FeedDefinition
+import ge.becrin.fuelcalc.sources.model.PreparedPublication
+import ge.becrin.fuelcalc.sources.model.PricePeriod
+import ge.becrin.fuelcalc.sources.model.RegionalDailySample
+import ge.becrin.fuelcalc.sources.model.RegionalPriceFact
+import ge.becrin.fuelcalc.sources.service.SourceImportException
+import ge.becrin.fuelcalc.sources.service.RegionCatalog
+import ge.becrin.fuelcalc.sources.wherefuel.RegionalStationSampler
 import ge.becrin.fuelcalc.archive.jpa.ArchiveStateRepository
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeEntity
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeRepository
@@ -49,7 +60,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = ["imports.enabled=false"])
 @Testcontainers
 @Transactional
 class FuelCalcApplicationTest {
@@ -60,6 +71,15 @@ class FuelCalcApplicationTest {
 
         val publication: SourcePublicationEntity
     )
+
+    @Autowired
+    private lateinit var publisher: RegionalPricePublicationService
+
+    @Autowired
+    private lateinit var importStore: ImportStore
+
+    @Autowired
+    private lateinit var sampleService: RegionalPriceSampleService
 
     @Autowired
     private lateinit var context: ApplicationContext
@@ -252,6 +272,187 @@ class FuelCalcApplicationTest {
         assertFalse(Hibernate.isInitialized(restored.feed))
         assertEquals(feedId, restored.feed.id)
     }
+
+    @Test
+    fun testRepeatedPublicationKeepsIdsAndDoesNotChangeRevision() {
+        val feed = importFeed("ROSSTAT")
+        val runId = checkNotNull(importStore.begin(feed))
+        val publication = preparedPrice(BigDecimal("76.10"), LocalDate.of(2026, 10, 20))
+        val first = publisher.publish(feed, runId, publication)
+        val id = jdbc.queryForObject("SELECT current_observation_id FROM regional_price_keys", Long::class.java)
+        val revision = jdbc.queryForObject("SELECT revision FROM archive_state", Long::class.java)
+        val repeated = publisher.publish(
+            feed, runId, publication.copy(facts = publication.facts.map { it.copy(price = BigDecimal("76.1000")) })
+        )
+
+        assertEquals(1, first.inserted)
+        assertEquals(0, repeated.inserted)
+        assertEquals(0, repeated.conflicts)
+        assertEquals(id, jdbc.queryForObject("SELECT current_observation_id FROM regional_price_keys", Long::class.java))
+        assertEquals(revision, jdbc.queryForObject("SELECT revision FROM archive_state", Long::class.java))
+    }
+
+    @Test
+    fun testNewerPublicationPreservesHistoryAndUpdatesOnlyItsProvider() {
+        val direct = importFeed("ROSSTAT")
+        val proxy = importFeed("RUSTATA")
+        val directRun = checkNotNull(importStore.begin(direct))
+        val proxyRun = checkNotNull(importStore.begin(proxy))
+        val original = preparedPrice(BigDecimal("76.10"), LocalDate.of(2026, 10, 20))
+
+        publisher.publish(direct, directRun, original)
+        publisher.publish(proxy, proxyRun, original)
+
+        val originalId = jdbc.queryForObject(
+            "SELECT current_observation_id FROM regional_price_keys WHERE provider_code = 'ROSSTAT'", Long::class.java
+        )
+        val corrected = preparedPrice(BigDecimal("77.25"), LocalDate.of(2026, 10, 21))
+        val result = publisher.publish(direct, directRun, corrected)
+
+        assertEquals(1, result.inserted)
+        assertEquals(0, result.conflicts)
+        assertEquals(BigDecimal("76.10"), jdbc.queryForObject(
+            "SELECT price_rub_per_liter FROM regional_price_observations WHERE id = ?", BigDecimal::class.java, originalId
+        ))
+        assertEquals(BigDecimal("77.25"), jdbc.queryForObject(
+            "SELECT o.price_rub_per_liter FROM regional_price_keys k " +
+                "INNER JOIN regional_price_observations o ON o.id = k.current_observation_id WHERE k.provider_code = 'ROSSTAT'",
+            BigDecimal::class.java
+        ))
+        assertEquals(BigDecimal("76.10"), jdbc.queryForObject(
+            "SELECT o.price_rub_per_liter FROM regional_price_keys k " +
+                "INNER JOIN regional_price_observations o ON o.id = k.current_observation_id WHERE k.provider_code = 'RUSTATA'",
+            BigDecimal::class.java
+        ))
+    }
+
+    @Test
+    fun testUnorderedCorrectionIsArchivedWithoutReplacingCurrentPrice() {
+        val feed = importFeed("ROSSTAT")
+        val run = checkNotNull(importStore.begin(feed))
+        val date = LocalDate.of(2026, 10, 20)
+
+        publisher.publish(feed, run, preparedPrice(BigDecimal("76.10"), date))
+
+        val result = publisher.publish(feed, run, preparedPrice(BigDecimal("75.00"), date))
+
+        assertEquals(1, result.inserted)
+        assertEquals(1, result.conflicts)
+        assertEquals(2L, jdbc.queryForObject("SELECT COUNT(*) FROM regional_price_observations", Long::class.java))
+        assertEquals(BigDecimal("76.10"), jdbc.queryForObject(
+            "SELECT o.price_rub_per_liter FROM regional_price_keys k " +
+                "INNER JOIN regional_price_observations o ON o.id = k.current_observation_id", BigDecimal::class.java
+        ))
+    }
+
+    @Test
+    fun testRateLimitCooldownAppliesToBothFrequenciesAndSurvivesNextAttempt() {
+        val feed = importFeed("RUSTATA")
+        val monthly = feed.copy(code = "RUSTATA_MONTHLY_TEST", frequency = PriceFrequency.MONTHLY)
+        importStore.initialize(listOf(monthly))
+        val run = checkNotNull(importStore.begin(feed))
+        val retryAt = Instant.now().plusSeconds(3600)
+
+        importStore.finish(run, 0, SourceImportException("RATE_LIMITED", "Rate limited", retryAt), "UNKNOWN")
+
+        assertEquals(null, importStore.begin(feed))
+        assertEquals(null, importStore.begin(monthly))
+        assertEquals("FAILED", jdbc.queryForObject("SELECT status FROM import_runs WHERE id = ?", String::class.java, run))
+        assertEquals("UNAVAILABLE", jdbc.queryForObject(
+            "SELECT update_status FROM source_feeds WHERE code = ?", String::class.java, feed.code
+        ))
+    }
+
+    @Test
+    fun testDailySamplesKeepABAAndEachDayHasEqualWeight() {
+        val feed = importFeed("WHEREFUEL")
+        val run = checkNotNull(importStore.begin(feed))
+        val firstAt = Instant.parse("2026-09-01T10:00:00Z")
+        val a = RegionalDailySample("03000000000", "DIESEL", BigDecimal("60.000000"), 5, firstAt,
+            firstAt.minusSeconds(1), firstAt.minusSeconds(1), "a".repeat(64))
+        val b = a.copy(price = BigDecimal("90.000000"), collectedAt = firstAt.plusSeconds(3600), contentHash = "b".repeat(64))
+        val repeatedA = a.copy(collectedAt = firstAt.plusSeconds(7200))
+        val nextDay = a.copy(price = BigDecimal("80.000000"), stationCount = 20, collectedAt = firstAt.plusSeconds(86400),
+            oldestPriceAt = firstAt.plusSeconds(86399), newestPriceAt = firstAt.plusSeconds(86399), contentHash = "c".repeat(64))
+
+        sampleService.append(run, listOf(a))
+        sampleService.append(run, listOf(a.copy(collectedAt = firstAt.plusSeconds(1))))
+        sampleService.append(run, listOf(b))
+        sampleService.append(run, listOf(repeatedA))
+        sampleService.append(run, listOf(nextDay))
+
+        val publications = sampleService.prepare(PriceFrequency.MONTHLY, LocalDate.of(2026, 10, 1), "https://wherefuel.ru")
+        val fact = publications.single().facts.single()
+
+        assertEquals(4L, jdbc.queryForObject("SELECT COUNT(*) FROM regional_price_samples", Long::class.java))
+        assertEquals(BigDecimal("70.000000"), fact.price)
+        assertEquals(2, fact.sampleDayCount)
+        assertEquals(30, fact.sampleExpectedDayCount)
+        assertEquals(5, fact.sampleMinStationCount)
+    }
+
+    @Test
+    fun testHistoryProgressCanStartAdvanceAndComplete() {
+        val feed = importFeed("ROSSTAT")
+        val start = LocalDate.of(2026, 1, 1)
+        val until = LocalDate.of(2026, 10, 1)
+
+        importStore.saveProgress(feed, "BACKFILL", start, until)
+
+        assertEquals(start.toString(), importStore.state(feed)["backfill_next_from"].toString())
+
+        importStore.saveProgress(feed, "BACKFILL", null, null)
+
+        assertEquals(null, importStore.state(feed)["backfill_next_from"])
+        assertNotNull(importStore.state(feed)["backfill_completed_at"])
+
+        importStore.saveProgress(feed, "RECONCILIATION", start, until)
+        importStore.saveProgress(feed, "RECONCILIATION", null, null)
+
+        assertNotNull(importStore.state(feed)["last_reconciled_at"])
+    }
+
+    @Test
+    fun testRegionCatalogUpsertUpdatesNamesOnlyWhenChangedAndRetainsHistory() {
+        val first = RegionCatalog.Region("01000000000", "Тестовая область")
+        val second = RegionCatalog.Region("02000000000", "Тестовый край")
+        val revision = checkNotNull(jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
+        importStore.synchronizeRegions(listOf(first, second))
+
+        assertEquals(revision + 1, jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
+        assertEquals(listOf(first, second), importStore.savedRegions())
+
+        importStore.synchronizeRegions(listOf(first, second))
+
+        assertEquals(revision + 1, jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
+
+        val renamed = first.copy(name = "Обновлённая тестовая область")
+        importStore.synchronizeRegions(listOf(renamed))
+
+        assertEquals(listOf(renamed, second), importStore.savedRegions())
+        assertEquals(revision + 2, jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
+    }
+
+    private fun importFeed(provider: String): FeedDefinition {
+        val feed = FeedDefinition(
+            "${provider}_WEEKLY_TEST", provider, if (provider == "WHEREFUEL") provider else "ROSSTAT", PriceFrequency.WEEKLY,
+            "test-source", if (provider == "WHEREFUEL") RegionalStationSampler.POLICY else null
+        )
+        importStore.initialize(listOf(feed))
+        importStore.synchronizeRegions(listOf(RegionCatalog.Region("03000000000", "Тестовый край")))
+
+        return feed
+    }
+
+    private fun preparedPrice(
+        price: BigDecimal,
+        publicationDate: LocalDate
+    ): PreparedPublication =
+        PreparedPublication(
+            PricePeriod(PriceFrequency.WEEKLY, LocalDate.of(2026, 10, 19), LocalDate.of(2026, 10, 13), LocalDate.of(2026, 10, 19)),
+            "test-week-2026-10-19", "https://example.test/prices", "Test source",
+            listOf(RegionalPriceFact("03000000000", "DIESEL", price, publicationDate))
+        )
 
     private fun createPriceFixture(): PriceFixture {
         val region = RegionEntity(code = "23", name = "Краснодарский край", createdAt = loadedAt)

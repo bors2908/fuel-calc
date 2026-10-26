@@ -26,3 +26,47 @@ management:
     web:
       exposure:
         include: health
+
+
+imports:
+  enabled: ${IMPORTS_ENABLED:true}
+  fetch-on-startup: ${FETCH_ON_STARTUP:true}
+  time-zone: ${IMPORTS_TIME_ZONE:Europe/Moscow}
+  history-from: 2026-01-01
+  history-windows-per-run: 2
+  reconciliation-interval: P7D
+  batch-size: 500
+  connect-timeout: ${SOURCE_CONNECT_TIMEOUT:PT10S}
+  request-timeout: PT30S
+  max-response-bytes: 33554432
+  max-run-duration: PT10M
+  rosstat:
+    enabled: ${ROSSTAT_ENABLED:true}
+    fetch-on-startup: ${ROSSTAT_FETCH_ON_STARTUP:true}
+    cron: "${ROSSTAT_CRON:0 0 */6 * * *}"
+    ignore-tls-errors: ${ROSSTAT_IGNORE_TLS_ERRORS:true}
+    request-timeout: PT2M
+    monthly-interval: PT24H
+    weekly-catalog: https://rosstat.gov.ru/compendium/document/50798
+    monthly-catalog: https://rosstat.gov.ru/statistics/price
+  rustata:
+    enabled: ${RUSTATA_ENABLED:true}
+    fetch-on-startup: ${RUSTATA_FETCH_ON_STARTUP:false}
+    cron: "${RUSTATA_CRON:0 30 */6 * * *}"
+    monthly-interval: PT24H
+    base-url: https://rustata.ru
+    token: ${RUSTATA_TOKEN:}
+    request-interval: PT6S
+    page-size: 300
+    max-pages: 10
+  wherefuel:
+    enabled: ${WHEREFUEL_ENABLED:true}
+    fetch-on-startup: ${WHEREFUEL_FETCH_ON_STARTUP:true}
+    cron: "${WHEREFUEL_CRON:0 45 * * * *}"
+    base-url: https://wherefuel.ru
+    api-key: ${WHEREFUEL_API_KEY:}
+    boundaries-url: https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/russia.geojson
+    region-codes: ${WHEREFUEL_REGION_CODES:}
+    request-interval: PT2S
+    max-requests: 120
+    response-limit: 1000
