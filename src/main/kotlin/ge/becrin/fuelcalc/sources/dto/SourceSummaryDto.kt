@@ -5,13 +5,9 @@ import ge.becrin.fuelcalc.prices.dto.RegionalPriceSampleDto
 import ge.becrin.fuelcalc.sources.PriceAggregationMethod
 
 data class SourceSummaryDto(
-    val publisher: SourceRefDto,
+    val provider: SourceLabelDto,
 
-    val provider: SourceRefDto,
-
-    val datasetId: String,
-
-    val publicationId: String?,
+    val updateKey: String,
 
     val aggregationMethod: PriceAggregationMethod,
 

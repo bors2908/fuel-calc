@@ -7,8 +7,6 @@ data class PriceChangeDto(
 
     val startPrice: PriceCellDto,
 
-    val endPrice: PriceCellDto,
-
     val absoluteRubPerLiter: String?,
 
     val percent: String?

@@ -7,6 +7,7 @@ import ge.becrin.fuelcalc.prices.jpa.PriceQueryExecutor
 import ge.becrin.fuelcalc.prices.model.PriceSelection
 import ge.becrin.fuelcalc.prices.model.SeriesBounds
 import ge.becrin.fuelcalc.sources.service.SourceUpdateReader
+import ge.becrin.fuelcalc.sources.dto.SourceUpdateDto
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 
@@ -27,7 +28,7 @@ class PriceReadContextFactory(
 
         val bounds: Map<String, SeriesBounds>,
 
-        val updates: SourceUpdateReader.Updates
+        val updates: Map<String, SourceUpdateDto>
     )
 
     fun query(
@@ -50,6 +51,6 @@ class PriceReadContextFactory(
             selection.preferred
         ).associateBy { it.regionCode }
 
-        return ReadContext(selection, identity.context(selection), bounds, states.read())
+        return ReadContext(selection, identity.context(selection), bounds, states.read(listOf(selection.frequency)))
     }
 }

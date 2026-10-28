@@ -18,7 +18,5 @@ data class SeriesBounds(
 
     val count: Int,
 
-    val latestProvider: PriceSource,
-
-    val latestFeedId: Long
+    val latestProvider: PriceSource
 )

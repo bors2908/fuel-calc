@@ -1,6 +1,12 @@
 package ge.becrin.fuelcalc.api
 
 import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyRepository
+import ge.becrin.fuelcalc.sources.model.FeedDefinition
+import ge.becrin.fuelcalc.sources.model.PreparedPublication
+import ge.becrin.fuelcalc.sources.model.PricePeriod
+import ge.becrin.fuelcalc.sources.model.RegionalPriceFact
+import jakarta.persistence.EntityManager
 import ge.becrin.fuelcalc.prices.service.RegionalPricePublicationService
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
@@ -67,13 +73,19 @@ class BusinessApiTest {
     @Autowired
     private lateinit var archive: ArchiveReadService
 
+    @Autowired
+    private lateinit var keys: RegionalPriceKeyRepository
+
+    @Autowired
+    private lateinit var entityManager: EntityManager
+
     private lateinit var fixture: ArchiveFixture
 
     private val contract = ApiContractAssertions()
 
     @BeforeEach
     fun prepare() {
-        fixture = ArchiveFixture(store, publisher)
+        fixture = ArchiveFixture(store, publisher, keys)
         fixture.regions()
     }
 
@@ -85,6 +97,8 @@ class BusinessApiTest {
         }
 
         val counts = listOf("A", "A,B", "A,B,C,D").map { selected ->
+            entityManager.flush()
+            entityManager.clear()
             counter.reset()
             prices("trend", regions = selected)
 
@@ -94,6 +108,8 @@ class BusinessApiTest {
         assertTrue(counts.all { it <= 7 }, counts.toString())
         assertEquals(counts.first(), counts.last())
 
+        entityManager.flush()
+        entityManager.clear()
         counter.reset()
         prices("trend", regions = "A,B,C,D", extra = mapOf("filterDateFrom" to "2026-10-19"))
 
@@ -102,6 +118,8 @@ class BusinessApiTest {
         println("API SELECT counts: trend 1/2/4 regions=$counts")
 
         val comparisonCounts = listOf("A,B", "A,B,C,D").map { selected ->
+            entityManager.flush()
+            entityManager.clear()
             counter.reset()
             prices("comparison", regions = selected)
 
@@ -113,16 +131,22 @@ class BusinessApiTest {
 
         println("API SELECT counts: comparison 2/4 regions=$comparisonCounts")
 
+        entityManager.flush()
+        entityManager.clear()
         counter.reset()
         prices("overview", regions = "A,B,C,D")
 
         assertTrue(counter.count() <= 9)
 
+        entityManager.flush()
+        entityManager.clear()
         counter.reset()
         calculate(regions = listOf("A", "B", "C", "D"))
 
         assertTrue(counter.count() <= 9)
 
+        entityManager.flush()
+        entityManager.clear()
         counter.reset()
         fetch("/api/v1/fuel-prices/coverage", mapOf("filterRegionCode" to "A,B,C,D", "preferredSource" to "ROSSTAT"))
 
@@ -138,10 +162,54 @@ class BusinessApiTest {
             it.preferredSource = PriceSource.ROSSTAT
         }
         val dto = trendService.get(input)
+        entityManager.flush()
+        entityManager.clear()
         counter.reset()
         json.writeValueAsString(dto)
 
         assertEquals(0, counter.count())
+    }
+
+    @Test
+    fun testJpaPublicationLoadsRelationsInSetsAndKeepsExistingVersions() {
+        val feed = FeedDefinition("ROSSTAT_JPA_TEST", "ROSSTAT", "ROSSTAT", PriceFrequency.WEEKLY, "jpa-test")
+        store.initialize(listOf(feed))
+
+        val runId = checkNotNull(store.begin(feed))
+        val counts = listOf(listOf("A"), listOf("A", "B", "C", "D")).mapIndexed { index, selected ->
+            val date = LocalDate.of(2026, 10, 12).plusWeeks(index.toLong())
+            val price = "72.50".toBigDecimal()
+            val publication = PreparedPublication(
+                period = PricePeriod(PriceFrequency.WEEKLY, date, date.minusDays(6), date),
+                externalKey = "jpa-test:$date",
+                url = "https://example.test/jpa",
+                attribution = "Test data",
+                facts = selected.map { RegionalPriceFact(it, "DIESEL", price, date.plusDays(2)) }
+            )
+            entityManager.flush()
+            entityManager.clear()
+            counter.reset()
+
+            val result = publisher.publish(feed, runId, publication)
+            val selects = counter.count()
+            val observationId = keys.currentObservationId("A", date, PriceFrequency.WEEKLY, "ROSSTAT")
+
+            assertEquals(selected.size, result.inserted)
+            assertEquals(0, result.conflicts)
+            entityManager.flush()
+            entityManager.clear()
+
+            val repeated = publisher.publish(feed, runId, publication)
+
+            assertEquals(0, repeated.inserted)
+            assertEquals(0, repeated.conflicts)
+            assertEquals(observationId, keys.currentObservationId("A", date, PriceFrequency.WEEKLY, "ROSSTAT"))
+
+            selects
+        }
+
+        assertEquals(counts.first(), counts.last(), counts.toString())
+        assertTrue(counts.all { it <= 8 }, counts.toString())
     }
 
     @Test
@@ -158,7 +226,7 @@ class BusinessApiTest {
 
         assertEquals("repeatable read", isolation)
         counter.afterSelect = { sql ->
-            if (Thread.currentThread().name == "api-snapshot-test" && sql == "SELECT revision FROM archive_state WHERE id = 1") {
+            if (Thread.currentThread().name == "api-snapshot-test" && sql.contains("from archive_state", ignoreCase = true)) {
                 snapshotStarted.countDown()
                 check(published.await(10, TimeUnit.SECONDS))
             }
@@ -255,18 +323,22 @@ class BusinessApiTest {
     }
 
     @Test
-    fun testDictionariesSearchAndCoverageOfEmptyArchive() {
+    fun testCompleteDictionariesAndCoverageOfEmptyArchive() {
         store.synchronizeRegions(listOf(RegionCatalog.Region("PERCENT", "Регион 100%")))
-        val regions = fetch("/api/v1/regions", mapOf("filterName" to " 100% "))
+        val regions = fetch("/api/v1/regions").path("data").toList()
 
-        assertEquals(1, regions.path("data").size())
-        assertEquals("PERCENT", regions.path("data").path(0).path("code").asString())
+        assertEquals(5, regions.size)
+        assertTrue(regions.any { it.path("code").asString() == "PERCENT" && it.path("name").asString() == "Регион 100%" })
+        assertEquals(
+            regions.sortedWith(compareBy({ it.path("name").asString() }, { it.path("code").asString() })),
+            regions
+        )
         assertEquals(3, fetch("/api/v1/fuel-types").path("data").size())
 
         val coverage = fetch("/api/v1/fuel-prices/coverage", mapOf("filterRegionCode" to "A,B,C,D", "preferredSource" to "ROSSTAT"))
 
         assertEquals(24, coverage.path("data").size())
-        assertTrue(coverage.path("data").all { !it.path("hasData").asBoolean() && it.path("firstAvailableDate").isNull })
+        assertTrue(coverage.path("data").all { it.path("observationCount").asInt() == 0 && it.path("firstAvailableDate").isNull })
         assertTrue(coverage.path("data").all { !it.has("latestSource") })
     }
 
@@ -291,16 +363,23 @@ class BusinessApiTest {
     @Test
     fun testFallbackAndUnavailableSourcePreserveSavedPricesAndPublisher() {
         fixture.price("A", "80")
-        fixture.price("B", "70", provider = "RUSTATA")
+        val proxyId = fixture.price("B", "70", provider = "RUSTATA")
         jdbc.update("UPDATE source_feeds SET update_status = 'UNAVAILABLE', enabled = FALSE WHERE provider_code = 'ROSSTAT'")
-        val comparison = prices("comparison").path("comparison")
+        entityManager.clear()
+        val response = prices("comparison")
+        val comparison = response.path("comparison")
         val rows = comparison.path("data").associateBy { it.path("region").path("code").asString() }
 
         assertEquals("AVAILABLE", comparison.path("status").asString())
         assertEquals("ROSSTAT", rows.getValue("A").path("price").path("source").path("provider").path("code").asString())
-        assertEquals("UNAVAILABLE", rows.getValue("A").path("price").path("freshness").path("sourceUpdate").path("status").asString())
+        val updateKey = rows.getValue("A").path("price").path("source").path("updateKey").asString()
+
+        assertEquals("UNAVAILABLE", response.path("sourceUpdates").path(updateKey).path("status").asString())
         assertEquals("RUSTATA", rows.getValue("B").path("price").path("source").path("provider").path("code").asString())
-        assertEquals("ROSSTAT", rows.getValue("B").path("price").path("source").path("publisher").path("code").asString())
+        val provenance = fetch("/api/v1/fuel-prices/observations/$proxyId").path("observation")
+
+        assertEquals("ROSSTAT", provenance.path("publisher").path("code").asString())
+        assertEquals("RUSTATA", provenance.path("price").path("source").path("provider").path("code").asString())
     }
 
     @Test
@@ -315,6 +394,9 @@ class BusinessApiTest {
         assertTrue(comparison.path("hasNewerObservations").asBoolean())
         assertEquals("2026-10-19", overview.path("latestPrice").path("period").path("referenceDate").asString())
         assertEquals("2026-10-12", overview.path("comparison").path("period").path("referenceDate").asString())
+        assertFalse(overview.path("change").has("endPrice"))
+        assertFalse(overview.path("comparison").has("reason"))
+        assertFalse(overview.path("comparison").has("message"))
         assertEquals("1.50", overview.path("change").path("absoluteRubPerLiter").asString())
         assertEquals("2.07", overview.path("change").path("percent").asString())
     }
@@ -344,12 +426,32 @@ class BusinessApiTest {
         fixture.price("A", "80", date = "2026-10-12")
         fixture.price("A", "81")
         fixture.price("B", "70", provider = "RUSTATA")
-        val data = prices("trend", regions = "A,B,C").path("data")
+        val response = prices("trend", regions = "A,B,C")
+        val data = response.path("data")
 
         assertEquals("AVAILABLE", data.path(0).path("status").asString())
         assertEquals("PARTIAL", data.path(1).path("status").asString())
         assertEquals("NO_DATA", data.path(2).path("status").asString())
         assertTrue(data.all { it.path("points").size() == 2 })
+        assertEquals(2, response.path("sourceUpdates").size())
+        assertEquals("2026-10-19", data.path(0).path("lastAvailableDate").asString())
+
+        for (series in data) {
+            for (point in series.path("points")) {
+                assertFalse(point.has("freshness"))
+
+                if (!point.path("priceRubPerLiter").isNull) {
+                    val source = point.path("source")
+                    val key = source.path("updateKey").asString()
+
+                    assertTrue(response.path("sourceUpdates").has(key))
+                    assertFalse(source.has("publisher"))
+                    assertFalse(source.has("datasetId"))
+                    assertFalse(source.has("publicationId"))
+                    assertFalse(source.path("provider").has("url"))
+                }
+            }
+        }
         assertEquals("NO_OBSERVATION_FOR_PERIOD", data.path(1).path("points").path(0).path("missingReason").asString())
         assertTrue(data.path(1).path("points").path(0).has("period"))
         assertEquals("RUSTATA", data.path(1).path("points").path(1).path("source").path("provider").path("code").asString())
@@ -374,6 +476,7 @@ class BusinessApiTest {
         val old = fixture.price("A", "80.00")
         fixture.price("A", "70.00", provider = "RUSTATA")
         jdbc.update("UPDATE regional_price_keys SET current_observation_id = NULL WHERE provider_code = 'ROSSTAT'")
+        entityManager.clear()
         store.bumpRevision()
 
         val current = prices("overview", regions = "A").path("latestPrice")
@@ -394,8 +497,8 @@ class BusinessApiTest {
         val result = prices("overview", regions = "A", extra = mapOf("filterDateTo" to "2026-09-30"))
 
         assertEquals("80", result.path("latestPrice").path("priceRubPerLiter").asString())
-        assertEquals("2026-10-19", result.path("latestPrice").path("freshness").path("latestAvailableDate").asString())
-        assertFalse(result.path("latestPrice").path("freshness").path("isLatestAvailable").asBoolean())
+        assertEquals("2026-10-19", result.path("latestAvailableDate").asString())
+        assertFalse(result.path("latestPrice").has("freshness"))
         val coverage = fetch(
             "/api/v1/fuel-prices/coverage",
             mapOf(
@@ -431,19 +534,28 @@ class BusinessApiTest {
         fixture.price("A", "1.004")
         fixture.price("B", "1.005")
         val result = calculate(volume = "1")
-        val rows = result.path("data").associateBy { it.path("region").path("code").asString() }
+        val comparison = result.path("comparison")
+        val rows = comparison.path("data").associateBy { it.path("region").path("code").asString() }
+        val expectedComparison = prices("comparison").path("comparison")
 
         assertEquals("1.00", result.path("baseTotalRub").asString())
         assertEquals("0.01", rows.getValue("B").path("differenceRub").asString())
         assertEquals("HIGHER", rows.getValue("B").path("relation").asString())
         assertEquals("BASE", rows.getValue("A").path("relation").asString())
-        assertTrue(rows.getValue("A").path("isBase").asBoolean())
-        assertTrue(result.path("expectedSnapshotId").isNull)
+        assertFalse(rows.getValue("A").has("isBase"))
+        assertFalse(result.has("data"))
+        assertFalse(result.has("expectedSnapshotId"))
         assertTrue(result.path("snapshotChanged").isNull)
-        assertEquals(
-            result.path("comparison").path("data").map { it.path("region").path("code").asString() },
-            result.path("data").map { it.path("region").path("code").asString() }
-        )
+        assertEquals(expectedComparison.path("snapshotId"), comparison.path("snapshotId"))
+        assertEquals(expectedComparison.path("period"), comparison.path("period"))
+
+        for (expected in expectedComparison.path("data")) {
+            val row = rows.getValue(expected.path("region").path("code").asString())
+
+            for (field in listOf("price", "differenceRubPerLiter", "isLowest", "isHighest", "latestAvailableDate")) {
+                assertEquals(expected.path(field), row.path(field))
+            }
+        }
     }
 
     @Test
@@ -478,7 +590,12 @@ class BusinessApiTest {
         assertEquals("72.50", result.path("price").path("priceRubPerLiter").asString())
         assertEquals(old.toString(), result.path("price").path("observationId").asString())
         assertTrue(result.path("publishedAt").isNull)
-        assertTrue(result.path("price").path("source").path("publicationId").isNull)
+        assertFalse(result.has("observationId"))
+        assertEquals("ROSSTAT", result.path("publisher").path("code").asString())
+        assertEquals("fixture-ROSSTAT-WEEKLY", result.path("datasetId").asString())
+        assertEquals("2026-10-21", result.path("publicationDate").asString())
+        assertEquals("https://example.test/prices", result.path("publicationUrl").asString())
+        assertTrue(result.path("publicationId").isNull)
         assertEquals("ResourceNotFound", fetch("/api/v1/fuel-prices/observations/not-an-id", status = 404).path("type").asString())
         fetch("/api/v1/fuel-prices/observations/99999999999999999999999", status = 404)
     }

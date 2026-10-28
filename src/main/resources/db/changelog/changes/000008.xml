@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <dropColumn tableName="price_periods" columnName="label"/>
+        <dropColumn tableName="source_feeds" columnName="update_message"/>
+        <sql>
+            <![CDATA[
+            ALTER TABLE import_runs DROP CONSTRAINT import_runs_ck1;
+            ]]>
+        </sql>
+        <dropColumn tableName="import_runs" columnName="rejected_count"/>
+        <sql>
+            <![CDATA[
+            ALTER TABLE import_runs
+                ADD CONSTRAINT import_runs_ck1 CHECK (
+                    status IN ('RUNNING', 'SUCCEEDED', 'FAILED')
+                    AND
+                    imported_count >= 0
+                );
+            ]]>
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

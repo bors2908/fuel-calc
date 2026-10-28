@@ -1,6 +1,7 @@
 package ge.becrin.fuelcalc.api
 
 import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyRepository
 import ge.becrin.fuelcalc.prices.service.RegionalPricePublicationService
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.model.FeedDefinition
@@ -15,7 +16,9 @@ import java.time.LocalDate
 class ArchiveFixture(
     private val store: ImportStore,
 
-    private val publisher: RegionalPricePublicationService
+    private val publisher: RegionalPricePublicationService,
+
+    private val keys: RegionalPriceKeyRepository
 ) {
     fun regions() {
         store.synchronizeRegions(
@@ -78,14 +81,6 @@ class ArchiveFixture(
             )
         )
 
-        return checkNotNull(
-            store.jdbc.queryForObject(
-                "SELECT k.current_observation_id FROM regional_price_keys k " +
-                "INNER JOIN regions r ON r.id = k.region_id INNER JOIN price_periods p ON p.id = k.period_id " +
-                "WHERE r.code = :region AND p.reference_date = :date AND p.frequency = :frequency AND k.provider_code = :provider",
-                mapOf("region" to region, "date" to reference, "frequency" to frequency.name, "provider" to provider),
-                Long::class.java
-            )
-        )
+        return checkNotNull(keys.currentObservationId(region, reference, frequency, provider))
     }
 }

@@ -2,9 +2,11 @@ package ge.becrin.fuelcalc.prices.jpa
 
 import ge.becrin.fuelcalc.fuels.FuelType
 import ge.becrin.fuelcalc.fuels.dto.FuelTypeRefDto
+import ge.becrin.fuelcalc.prices.PriceBasis
 import ge.becrin.fuelcalc.prices.PriceFrequency
 import ge.becrin.fuelcalc.prices.dto.PricePeriodDto
 import ge.becrin.fuelcalc.prices.dto.RegionalPriceSampleDto
+import ge.becrin.fuelcalc.prices.model.PriceObservationDetails
 import ge.becrin.fuelcalc.prices.model.PriceRow
 import ge.becrin.fuelcalc.prices.model.PriceSelection
 import ge.becrin.fuelcalc.prices.model.SeriesBounds
@@ -12,61 +14,58 @@ import ge.becrin.fuelcalc.prices.service.SourceFallbackPolicy
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import ge.becrin.fuelcalc.sources.PriceAggregationMethod
 import ge.becrin.fuelcalc.sources.PriceSource
+import ge.becrin.fuelcalc.sources.dto.SourceLabelDto
 import ge.becrin.fuelcalc.sources.dto.SourceRefDto
 import ge.becrin.fuelcalc.sources.dto.SourceSummaryDto
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import jakarta.persistence.EntityManager
+import jakarta.persistence.Tuple
+import jakarta.persistence.TypedQuery
 import org.springframework.stereotype.Repository
-import java.sql.ResultSet
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Repository
 class PriceQueryExecutor(
-    private val jdbc: NamedParameterJdbcTemplate,
+    private val entityManager: EntityManager,
 
     private val policy: SourceFallbackPolicy
 ) {
     fun range(selection: PriceSelection): List<PriceRow> =
-        rows(selection, "", "ORDER BY x.reference_date, x.period_key, x.region_code")
+        rows(selection, "", "ORDER BY p.referenceDate, p.periodKey, r.code")
 
-    fun boundaries(selection: PriceSelection): List<PriceRow> {
-        val cte = cte(true)
-        val sql = cte + """
-            , boundary_rows AS (
-                SELECT resolved.*,
-                    ROW_NUMBER() OVER (PARTITION BY region_code ORDER BY reference_date, period_id) AS first_n,
-                    ROW_NUMBER() OVER (PARTITION BY region_code ORDER BY reference_date DESC, period_id DESC) AS last_n
-                FROM resolved
+    fun boundaries(selection: PriceSelection): List<PriceRow> =
+        rows(
+            selection,
+            """
+            AND (
+                p.referenceDate = (SELECT MIN(edge.period.referenceDate) $BOUNDARY_FROM)
+                OR p.referenceDate = (SELECT MAX(edge.period.referenceDate) $BOUNDARY_FROM)
             )
-            SELECT $DETAIL_COLUMNS
-            FROM boundary_rows x
-            $DETAIL_JOINS
-            WHERE x.first_n = 1 OR x.last_n = 1
-            ORDER BY x.reference_date, x.region_code
-        """.trimIndent()
+            """.trimIndent(),
+            "ORDER BY p.referenceDate, r.code"
+        )
 
-        return jdbc.query(sql, parameters(selection), ::row)
-    }
-
-    fun commonPeriod(selection: PriceSelection): Long? {
-        val sql = cte(true) + """
-            SELECT period_id
-            FROM resolved
-            GROUP BY period_id, reference_date
-            HAVING COUNT(DISTINCT region_code) = :regionCount
-            ORDER BY reference_date DESC, period_id DESC
-            LIMIT 1
-        """.trimIndent()
-
-        return jdbc.queryForList(sql, parameters(selection), Long::class.java).singleOrNull()
-    }
+    fun commonPeriod(selection: PriceSelection): Long? =
+        query(
+            """
+            SELECT p.id
+            $KEY_FROM
+            WHERE $RESOLVED
+                AND p.referenceDate BETWEEN :from AND :until
+            GROUP BY p.id, p.referenceDate
+            HAVING COUNT(DISTINCT r.id) = :regionCount
+            ORDER BY p.referenceDate DESC, p.id DESC
+            """.trimIndent(),
+            Long::class.javaObjectType,
+            parameters(selection)
+        ).setMaxResults(1).resultList.singleOrNull()
 
     fun atPeriod(
         selection: PriceSelection,
         periodId: Long
     ): List<PriceRow> =
-        rows(selection, "WHERE x.period_id = :periodId", "ORDER BY x.region_code", mapOf("periodId" to periodId))
+        rows(selection, "AND p.id = :periodId", "ORDER BY r.code", mapOf("periodId" to periodId))
 
     fun bounds(
         regions: List<String>,
@@ -74,67 +73,92 @@ class PriceQueryExecutor(
         frequencies: List<PriceFrequency>,
         preferred: PriceSource
     ): List<SeriesBounds> {
-        val sql = cte(false) + """
-            SELECT x.region_code, x.fuel_type_code, x.frequency,
-                MIN(x.reference_date) AS first_date, MAX(x.reference_date) AS last_date, COUNT(*) AS period_count,
-                (ARRAY_AGG(x.provider_code ORDER BY x.reference_date DESC))[1] AS latest_provider,
-                (ARRAY_AGG(pub.feed_id ORDER BY x.reference_date DESC))[1] AS latest_feed_id
-            FROM resolved x
-            INNER JOIN source_publications pub ON pub.id = x.publication_id
-            GROUP BY x.region_code, x.fuel_type_code, x.frequency
-        """.trimIndent()
+        val result = query(
+            """
+            SELECT r.code AS regionCode, k.fuelType.code AS fuelCode, p.frequency AS frequency,
+                MIN(p.referenceDate) AS firstDate, MAX(p.referenceDate) AS lastDate, COUNT(k) AS periodCount,
+                MIN(CASE WHEN p.referenceDate = (
+                    SELECT MAX(latest.period.referenceDate)
+                    FROM RegionalPriceKey latest
+                    WHERE latest.region = k.region
+                        AND latest.fuelType = k.fuelType
+                        AND latest.period.frequency = p.frequency
+                        AND latest.period.basis = :basis
+                        AND latest.currentObservation IS NOT NULL
+                ) THEN provider.code ELSE NULL END) AS latestProvider
+            $KEY_FROM
+            WHERE $RESOLVED
+            GROUP BY r.code, k.region, k.fuelType, k.fuelType.code, p.frequency
+            ORDER BY r.code, k.fuelType.code, p.frequency
+            """.trimIndent(),
+            Tuple::class.java,
+            parameters(regions, fuels, frequencies, preferred)
+        ).resultList
 
-        return jdbc.query(sql, parameters(regions, fuels, frequencies, preferred)) { r, _ ->
+        return result.map { value ->
             SeriesBounds(
-                r.getString("region_code"),
-                FuelType.valueOf(r.getString("fuel_type_code")),
-                PriceFrequency.valueOf(r.getString("frequency")),
-                r.getDate("first_date").toLocalDate(),
-                r.getDate("last_date").toLocalDate(),
-                r.getInt("period_count"),
-                PriceSource.valueOf(r.getString("latest_provider")),
-                r.getLong("latest_feed_id")
+                regionCode = value.get("regionCode", String::class.java),
+                fuel = FuelType.valueOf(value.get("fuelCode", String::class.java)),
+                frequency = value.get("frequency", PriceFrequency::class.java),
+                first = value.get("firstDate", LocalDate::class.java),
+                last = value.get("lastDate", LocalDate::class.java),
+                count = value.get("periodCount", Number::class.java).toInt(),
+                latestProvider = PriceSource.valueOf(value.get("latestProvider", String::class.java))
             )
         }
     }
 
-    fun details(id: Long): PriceRow? {
-        val sql = """
-            WITH observation AS (
-                SELECT $CANDIDATE_COLUMNS
-                FROM regional_price_keys k
-                INNER JOIN regional_price_observations o ON o.price_key_id = k.id
-                INNER JOIN price_periods p ON p.id = k.period_id
-                INNER JOIN regions r ON r.id = k.region_id
-                WHERE o.id = :id
-            )
-            SELECT $DETAIL_COLUMNS
-            FROM observation x
-            $DETAIL_JOINS
-        """.trimIndent()
+    fun details(id: Long): PriceObservationDetails? {
+        val observation = query(
+            """
+            $OBSERVATION_FROM
+                JOIN FETCH feed.publisher
+            WHERE o.id = :id
+            """.trimIndent(),
+            RegionalPriceObservationEntity::class.java,
+            mapOf("id" to id)
+        ).resultList.singleOrNull() ?: return null
+        val publication = observation.publication
+        val feed = publication.feed
+        val publisher = feed.publisher
 
-        return jdbc.query(sql, mapOf("id" to id), ::row).singleOrNull()
+        return PriceObservationDetails(
+            price = row(observation),
+            publisher = SourceRefDto(publisher.code, publisher.name, publisher.url),
+            providerUrl = observation.priceKey.provider.url,
+            datasetId = feed.externalCode,
+            publicationId = publication.externalPublicationId,
+            publicationDate = publication.publicationDate,
+            publishedAt = publication.publishedAt,
+            loadedAt = publication.loadedAt,
+            publicationUrl = publication.publicationUrl,
+            attribution = publication.attribution,
+            methodologyUrl = publication.methodologyUrl,
+            note = publication.note
+        )
     }
 
     fun latestForProvider(row: PriceRow): LocalDate? =
-        jdbc.queryForObject(
+        query(
             """
-            SELECT MAX(p.reference_date)
-            FROM regional_price_keys k
-            INNER JOIN regions r ON r.id = k.region_id
-            INNER JOIN price_periods p ON p.id = k.period_id
-            WHERE r.code = :region AND k.fuel_type_code = :fuel AND k.provider_code = :provider
-                AND p.frequency = :frequency AND p.basis = 'REGIONAL_CONSUMER_AVERAGE'
-                AND k.current_observation_id IS NOT NULL
+            SELECT MAX(price.period.referenceDate)
+            FROM RegionalPriceKey price
+            WHERE price.region.code = :region
+                AND price.fuelType.code = :fuel
+                AND price.provider.code = :provider
+                AND price.period.frequency = :frequency
+                AND price.period.basis = :basis
+                AND price.currentObservation IS NOT NULL
             """.trimIndent(),
+            LocalDate::class.java,
             mapOf(
                 "region" to row.region.code,
                 "fuel" to row.fuel.code.name,
                 "provider" to row.source.provider.code,
-                "frequency" to row.period.frequency.name
-            ),
-            LocalDate::class.java
-        )
+                "frequency" to row.period.frequency,
+                "basis" to PriceBasis.REGIONAL_CONSUMER_AVERAGE
+            )
+        ).singleResult
 
     private fun rows(
         selection: PriceSelection,
@@ -142,15 +166,33 @@ class PriceQueryExecutor(
         order: String,
         extra: Map<String, Any> = emptyMap()
     ): List<PriceRow> =
-        jdbc.query(
-            cte(true) + "SELECT $DETAIL_COLUMNS FROM resolved x $DETAIL_JOINS $where $order",
-            parameters(selection) + extra,
-            ::row
-        )
+        query(
+            "$OBSERVATION_FROM WHERE k.currentObservation = o AND $RESOLVED " +
+                "AND p.referenceDate BETWEEN :from AND :until $where $order",
+            RegionalPriceObservationEntity::class.java,
+            parameters(selection) + extra
+        ).resultList.map(::row)
+
+    private fun <T> query(
+        jpql: String,
+        type: Class<T>,
+        parameters: Map<String, Any>
+    ): TypedQuery<T> {
+        val query = entityManager.createQuery(jpql, type)
+        val names = query.parameters.map { it.name }.toSet()
+
+        for ((name, value) in parameters) {
+            if (name in names) {
+                query.setParameter(name, value)
+            }
+        }
+
+        return query
+    }
 
     private fun parameters(selection: PriceSelection): Map<String, Any> =
         parameters(selection.regions.map { it.code }, listOf(selection.fuel.code), listOf(selection.frequency), selection.preferred) +
-            mapOf("from" to selection.from, "until" to selection.until, "regionCount" to selection.regions.size)
+            mapOf("from" to selection.from, "until" to selection.until, "regionCount" to selection.regions.size.toLong())
 
     private fun parameters(
         regions: List<String>,
@@ -163,87 +205,56 @@ class PriceQueryExecutor(
         return mapOf(
             "regions" to regions,
             "fuels" to fuels.map { it.name },
-            "frequencies" to frequencies.map { it.name },
+            "frequencies" to frequencies,
+            "basis" to PriceBasis.REGIONAL_CONSUMER_AVERAGE,
             "firstProvider" to order[0].name,
             "secondProvider" to order[1].name
         )
     }
 
-    private fun cte(inRange: Boolean): String =
-        """
-        WITH ranked AS (
-            SELECT $CANDIDATE_COLUMNS,
-                ROW_NUMBER() OVER (
-                    PARTITION BY k.region_id, k.fuel_type_code, k.period_id
-                    ORDER BY CASE k.provider_code WHEN :firstProvider THEN 0 WHEN :secondProvider THEN 1 ELSE 2 END
-                ) AS source_rank
-            FROM regional_price_keys k
-            INNER JOIN regional_price_observations o ON o.id = k.current_observation_id AND o.price_key_id = k.id
-            INNER JOIN price_periods p ON p.id = k.period_id
-            INNER JOIN regions r ON r.id = k.region_id
-            WHERE r.code IN (:regions) AND k.fuel_type_code IN (:fuels) AND p.frequency IN (:frequencies)
-                AND p.basis = 'REGIONAL_CONSUMER_AVERAGE'
-                ${if (inRange) "AND p.reference_date BETWEEN :from AND :until" else ""}
-        ), resolved AS (SELECT * FROM ranked WHERE source_rank = 1)
-        """.trimIndent() + "\n"
-
-    private fun row(
-        r: ResultSet,
-        index: Int
-    ): PriceRow {
-        val method = PriceAggregationMethod.valueOf(r.getString("aggregation_method"))
+    private fun row(observation: RegionalPriceObservationEntity): PriceRow {
+        val key = observation.priceKey
+        val feed = observation.publication.feed
         val sample =
-            if (method == PriceAggregationMethod.STATION_SAMPLE_MEAN) {
+            if (feed.aggregationMethod == PriceAggregationMethod.STATION_SAMPLE_MEAN) {
                 RegionalPriceSampleDto(
-                    checkNotNull(r.getString("sampling_policy_code")),
-                    r.getInt("sample_min_station_count"),
-                    r.getInt("sample_day_count"),
-                    r.getInt("sample_expected_day_count"),
-                    checkNotNull(r.getTimestamp("sample_collected_at")).toInstant()
+                    checkNotNull(feed.samplingPolicyCode),
+                    checkNotNull(observation.sampleMinStationCount),
+                    checkNotNull(observation.sampleDayCount),
+                    checkNotNull(observation.sampleExpectedDayCount),
+                    checkNotNull(observation.sampleCollectedAt)
                 )
             } else {
                 null
             }
-        val source = SourceSummaryDto(
-            SourceRefDto(r.getString("publisher_code"), r.getString("publisher_name"), r.getString("publisher_url")),
-            SourceRefDto(r.getString("provider_code"), r.getString("provider_name"), r.getString("provider_url")),
-            r.getString("external_code"),
-            r.getString("external_publication_id"),
-            method,
-            sample
-        )
 
         return PriceRow(
-            r.getLong("observation_id"),
-            RegionRefDto(r.getString("region_code"), r.getString("region_name")),
-            FuelTypeRefDto(FuelType.valueOf(r.getString("fuel_type_code")), r.getString("fuel_name")),
-            period(r),
-            r.getBigDecimal("price_rub_per_liter"),
-            r.getLong("feed_id"),
-            source,
-            r.getDate("publication_date")?.toLocalDate(),
-            r.getTimestamp("published_at")?.toInstant(),
-            r.getTimestamp("loaded_at").toInstant(),
-            r.getString("publication_url"),
-            r.getString("attribution"),
-            r.getString("methodology_url"),
-            r.getString("note")
+            id = observation.id,
+            region = RegionRefDto(key.region.code, key.region.name),
+            fuel = FuelTypeRefDto(FuelType.valueOf(key.fuelType.code), key.fuelType.name),
+            period = period(key.period),
+            price = observation.priceRubPerLiter,
+            source = SourceSummaryDto(
+                provider = SourceLabelDto(key.provider.code, key.provider.name),
+                updateKey = feed.code,
+                aggregationMethod = feed.aggregationMethod,
+                sample = sample
+            )
         )
     }
 
-    private fun period(row: ResultSet): PricePeriodDto {
-        val frequency = PriceFrequency.valueOf(row.getString("frequency"))
-        val date = row.getDate("reference_date").toLocalDate()
-        val start = row.getDate("start_date")?.toLocalDate()
-        val end = row.getDate("end_date")?.toLocalDate()
+    private fun period(period: PricePeriodEntity): PricePeriodDto {
+        val date = period.referenceDate
+        val start = period.startDate
+        val end = period.endDate
         val label =
             when {
-                frequency == PriceFrequency.MONTHLY -> date.format(MONTH_LABEL).replaceFirstChar { it.titlecase(Locale.of("ru")) }
+                period.frequency == PriceFrequency.MONTHLY -> date.format(MONTH_LABEL).replaceFirstChar { it.titlecase(Locale.of("ru")) }
                 start != null && end != null -> "${start.format(DATE_LABEL)} — ${end.format(DATE_LABEL)}"
                 else -> "Неделя на ${date.format(DATE_LABEL)}"
             }
 
-        return PricePeriodDto(row.getString("period_key"), frequency, date, label, start, end)
+        return PricePeriodDto(period.periodKey, period.frequency, date, label, start, end)
     }
 
     companion object {
@@ -251,27 +262,51 @@ class PriceQueryExecutor(
 
         private val DATE_LABEL = DateTimeFormatter.ofPattern("dd.MM.uuuu")
 
-        private const val CANDIDATE_COLUMNS = """
-            r.code AS region_code, r.name AS region_name, k.fuel_type_code, k.provider_code,
-            p.id AS period_id, p.period_key, p.frequency, p.reference_date, p.label, p.start_date, p.end_date,
-            o.id AS observation_id, o.price_rub_per_liter, o.publication_id,
-            o.sample_min_station_count, o.sample_day_count, o.sample_expected_day_count, o.sample_collected_at
+        private const val KEY_FROM = """
+            FROM RegionalPriceKey k
+                JOIN k.region r
+                JOIN k.period p
+                JOIN k.provider provider
         """
 
-        private const val DETAIL_COLUMNS = """
-            x.*, ft.name AS fuel_name, pub.feed_id, pub.external_publication_id, pub.publication_date,
-            pub.published_at, pub.loaded_at, pub.publication_url, pub.attribution, pub.methodology_url, pub.note,
-            f.external_code, f.aggregation_method, f.sampling_policy_code, f.publisher_code,
-            publisher.name AS publisher_name, publisher.url AS publisher_url,
-            provider.name AS provider_name, provider.url AS provider_url
+        private const val OBSERVATION_FROM = """
+            SELECT o
+            FROM RegionalPriceObservation o
+                JOIN FETCH o.priceKey k
+                JOIN FETCH k.region r
+                JOIN FETCH k.fuelType
+                JOIN FETCH k.period p
+                JOIN FETCH k.provider provider
+                JOIN FETCH o.publication publication
+                JOIN FETCH publication.feed feed
         """
 
-        private const val DETAIL_JOINS = """
-            INNER JOIN fuel_types ft ON ft.code = x.fuel_type_code
-            INNER JOIN source_publications pub ON pub.id = x.publication_id
-            INNER JOIN source_feeds f ON f.id = pub.feed_id
-            INNER JOIN data_sources publisher ON publisher.code = f.publisher_code
-            INNER JOIN data_sources provider ON provider.code = x.provider_code
+        private const val RESOLVED = """
+            r.code IN :regions
+                AND k.fuelType.code IN :fuels
+                AND p.frequency IN :frequencies
+                AND p.basis = :basis
+                AND k.currentObservation IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT alternative.id
+                    FROM RegionalPriceKey alternative
+                    WHERE alternative.region = k.region
+                        AND alternative.fuelType = k.fuelType
+                        AND alternative.period = p
+                        AND alternative.currentObservation IS NOT NULL
+                        AND CASE alternative.provider.code WHEN :firstProvider THEN 0 WHEN :secondProvider THEN 1 ELSE 2 END
+                            < CASE provider.code WHEN :firstProvider THEN 0 WHEN :secondProvider THEN 1 ELSE 2 END
+                )
+        """
+
+        private const val BOUNDARY_FROM = """
+            FROM RegionalPriceKey edge
+            WHERE edge.region = k.region
+                AND edge.fuelType = k.fuelType
+                AND edge.period.frequency = p.frequency
+                AND edge.period.basis = :basis
+                AND edge.currentObservation IS NOT NULL
+                AND edge.period.referenceDate BETWEEN :from AND :until
         """
     }
 }

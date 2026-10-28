@@ -39,9 +39,6 @@ class ImportRunEntity(
     @Column(name = "imported_count", nullable = false)
     var importedCount: Int = 0,
 
-    @Column(name = "rejected_count", nullable = false)
-    var rejectedCount: Int = 0,
-
     @Column(name = "error_code", length = 64)
     var errorCode: String? = null,
 

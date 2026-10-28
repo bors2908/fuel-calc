@@ -8,8 +8,6 @@ import ge.becrin.fuelcalc.sources.model.FeedDefinition
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.sql.Date
-import java.sql.Timestamp
 import java.time.Clock
 import java.time.Duration
 import java.time.LocalDate
@@ -54,12 +52,10 @@ class RegionalImportService(
         try {
             for (frequency in PriceFrequency.entries) {
                 val feed = adapter.definition(frequency)
-                val lastSuccess = store.jdbc.queryForList(
-                    "SELECT last_success_at FROM source_feeds WHERE code = :code", mapOf("code" to feed.code)
-                ).singleOrNull()?.get("last_success_at") as? Timestamp
+                val lastSuccess = store.lastSuccess(feed)
 
                 if (forceMonthly || frequency == PriceFrequency.WEEKLY || lastSuccess == null ||
-                    lastSuccess.toInstant().plus(
+                    lastSuccess.plus(
                         if (provider == "ROSSTAT") properties.rosstat.monthlyInterval else properties.rustata.monthlyInterval
                     ).isBefore(clock.instant())
                 ) {
@@ -96,16 +92,15 @@ class RegionalImportService(
             val recent = FetchWindow(maxOf(recentFrom, properties.historyFrom), today, "INCREMENTAL")
             val windows = mutableListOf(recent)
             val state = store.state(feed)
-            val backfillComplete = state["backfill_completed_at"] != null
-            val lastReconciled = (state["last_reconciled_at"] as? Timestamp)?.toInstant()
+            val backfillComplete = state.backfillCompletedAt != null
+            val lastReconciled = state.lastReconciledAt
             val mode = if (backfillComplete) "RECONCILIATION" else "BACKFILL"
-            val prefix = if (backfillComplete) "reconciliation" else "backfill"
-            val due = !backfillComplete || state["reconciliation_next_from"] != null || lastReconciled == null ||
+            val due = !backfillComplete || state.reconciliationNextFrom != null || lastReconciled == null ||
                 lastReconciled.plus(properties.reconciliationInterval).isBefore(clock.instant())
 
             if (due) {
-                var from = (state["${prefix}_next_from"] as? Date)?.toLocalDate() ?: properties.historyFrom
-                val until = (state["${prefix}_until"] as? Date)?.toLocalDate() ?: today
+                var from = (if (backfillComplete) state.reconciliationNextFrom else state.backfillNextFrom) ?: properties.historyFrom
+                val until = (if (backfillComplete) state.reconciliationUntil else state.backfillUntil) ?: today
 
                 if (!from.isAfter(until)) {
                     store.saveProgress(feed, mode, from, until)
@@ -154,8 +149,10 @@ class RegionalImportService(
                 if (window.mode != "INCREMENTAL") {
                     stage = "SAVE_PROGRESS"
 
-                    val fixedUntil = store.state(feed)[if (window.mode == "BACKFILL") "backfill_until" else "reconciliation_until"]
-                    val until = (fixedUntil as Date).toLocalDate()
+                    val progress = store.state(feed)
+                    val until = checkNotNull(
+                        if (window.mode == "BACKFILL") progress.backfillUntil else progress.reconciliationUntil
+                    )
                     val next = window.until.plusDays(1).takeUnless { it.isAfter(until) }
 
                     store.saveProgress(feed, window.mode, next, if (next == null) null else until)

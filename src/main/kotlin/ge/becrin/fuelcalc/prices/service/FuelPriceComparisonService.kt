@@ -20,6 +20,6 @@ class FuelPriceComparisonService(
             val context = contexts.query(input, meta.serverDate)
             val snapshot = resolver.resolve(context.selection)
 
-            PriceComparisonDto(meta, context.dto, converter.toDto(snapshot, context, input.sortBy, input.sortOrder))
+            PriceComparisonDto(meta, context.dto, converter.toDto(snapshot, context, input.sortBy, input.sortOrder), context.updates)
         }
 }

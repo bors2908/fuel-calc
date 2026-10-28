@@ -31,8 +31,8 @@ class FuelPriceOverviewService(
             val base = boundaries.filter { it.region.code == context.selection.base.code }.sortedBy { it.period.referenceDate }
             val first = base.firstOrNull()
             val last = base.lastOrNull()
-            val firstCell = first?.let { cells.available(it, context.bounds[it.region.code]?.last, context.updates) } ?: cells.missing()
-            val lastCell = last?.let { cells.available(it, context.bounds[it.region.code]?.last, context.updates) } ?: cells.missing()
+            val firstCell = first?.let { cells.available(it) } ?: cells.missing()
+            val lastCell = last?.let { cells.available(it) } ?: cells.missing()
             val enough = first != null && last != null && first.period.key != last.period.key
             val difference = if (enough) checkNotNull(last).price.subtract(checkNotNull(first).price) else null
             val status =
@@ -48,8 +48,16 @@ class FuelPriceOverviewService(
                 } else {
                     null
                 }
-            val change = PriceChangeDto(status, firstCell, lastCell, difference?.toPlainString(), percent)
+            val change = PriceChangeDto(status, firstCell, difference?.toPlainString(), percent)
 
-            PriceOverviewDto(meta, context.dto, lastCell, change, comparisons.summary(resolver.resolve(context.selection, boundaries)))
+            PriceOverviewDto(
+                meta = meta,
+                context = context.dto,
+                latestPrice = lastCell,
+                latestAvailableDate = context.bounds[context.selection.base.code]?.last,
+                change = change,
+                comparison = comparisons.summary(resolver.resolve(context.selection, boundaries)),
+                sourceUpdates = context.updates
+            )
         }
 }

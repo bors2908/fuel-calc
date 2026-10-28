@@ -4,14 +4,14 @@ import ge.becrin.fuelcalc.api.dto.ApiMetaDto
 import ge.becrin.fuelcalc.api.dto.ErrorDetailDto
 import ge.becrin.fuelcalc.api.error.ApiException
 import ge.becrin.fuelcalc.api.web.ApiRequestContext
-import org.springframework.jdbc.core.JdbcTemplate
+import ge.becrin.fuelcalc.archive.jpa.ArchiveStateRepository
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
 
 @Service
 class ArchiveReadService(
-    private val jdbc: JdbcTemplate,
+    private val archive: ArchiveStateRepository,
 
     private val context: ApiRequestContext
 ) {
@@ -20,7 +20,7 @@ class ArchiveReadService(
         expectedDataVersion: String? = null,
         action: (ApiMetaDto) -> T
     ): T {
-        val revision = checkNotNull(jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
+        val revision = archive.readRevision()
         val info = context.current()
         val version = revision.toString()
 

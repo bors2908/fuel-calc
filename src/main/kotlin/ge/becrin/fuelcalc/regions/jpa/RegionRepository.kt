@@ -8,9 +8,6 @@ interface RegionRepository : JpaRepository<RegionEntity, Long> {
     @Query("SELECT r FROM Region r WHERE r.code IN :codes ORDER BY r.code")
     fun findSelected(@Param("codes") codes: List<String>): List<RegionEntity>
 
-    @Query(
-        nativeQuery = true,
-        value = "SELECT * FROM regions WHERE name ILIKE :pattern ESCAPE '!' ORDER BY name, code"
-    )
-    fun findMatching(@Param("pattern") pattern: String): List<RegionEntity>
+    @Query("SELECT r FROM Region r ORDER BY r.name, r.code")
+    fun findOrdered(): List<RegionEntity>
 }

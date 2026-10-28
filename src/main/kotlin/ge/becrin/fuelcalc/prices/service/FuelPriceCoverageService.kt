@@ -50,17 +50,15 @@ class FuelPriceCoverageService(
                             region,
                             fuel,
                             frequency,
-                            row != null,
                             row?.first,
                             row?.last,
                             row?.count ?: 0,
-                            row?.latestProvider,
-                            row?.let { updates.feed(it.latestFeedId) } ?: updates.source(preferred, frequency)
+                            row?.latestProvider
                         )
                     }
                 }
             }
 
-            CoverageListDto(meta, PriceBasis.REGIONAL_CONSUMER_AVERAGE, preferred, policy.order(preferred), data)
+            CoverageListDto(meta, PriceBasis.REGIONAL_CONSUMER_AVERAGE, preferred, policy.order(preferred), data, updates)
         }
 }

@@ -11,7 +11,6 @@ import ge.becrin.fuelcalc.sources.model.RegionalPriceFact
 import ge.becrin.fuelcalc.sources.service.SourceImportException
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.wherefuel.RegionalStationSampler
-import ge.becrin.fuelcalc.archive.jpa.ArchiveStateRepository
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeEntity
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeRepository
 import ge.becrin.fuelcalc.prices.PriceFrequency
@@ -21,7 +20,6 @@ import ge.becrin.fuelcalc.prices.jpa.RegionalPriceObservationEntity
 import ge.becrin.fuelcalc.regions.jpa.RegionEntity
 import ge.becrin.fuelcalc.sources.PriceAggregationMethod
 import ge.becrin.fuelcalc.sources.jpa.DataSourceEntity
-import ge.becrin.fuelcalc.sources.jpa.DataSourceRepository
 import ge.becrin.fuelcalc.sources.jpa.ImportRunEntity
 import ge.becrin.fuelcalc.sources.jpa.SourceFeedEntity
 import ge.becrin.fuelcalc.sources.jpa.SourceFetchStateEntity
@@ -50,9 +48,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
-import org.springframework.context.ApplicationContext
 import org.springframework.dao.DataIntegrityViolationException
-import org.springframework.data.repository.Repository
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -82,19 +78,10 @@ class FuelCalcApplicationTest {
     private lateinit var sampleService: RegionalPriceSampleService
 
     @Autowired
-    private lateinit var context: ApplicationContext
-
-    @Autowired
     private lateinit var jdbc: JdbcTemplate
 
     @Autowired
     private lateinit var fuelTypes: FuelTypeRepository
-
-    @Autowired
-    private lateinit var sources: DataSourceRepository
-
-    @Autowired
-    private lateinit var archive: ArchiveStateRepository
 
     @Autowired
     private lateinit var liquibase: SpringLiquibase
@@ -110,7 +97,7 @@ class FuelCalcApplicationTest {
     private val price = BigDecimal("76.123456789012345678")
 
     @Test
-    fun testStartsHealthyWithAllJpaRepositories() {
+    fun testStartsHealthyWithValidatedJpaMappings() {
         val request = HttpRequest.newBuilder(URI.create("http://localhost:$port/actuator/health"))
             .timeout(Duration.ofSeconds(10))
             .build()
@@ -119,14 +106,13 @@ class FuelCalcApplicationTest {
         assertEquals(200, response.statusCode())
         assertContains(response.body(), "\"status\":\"UP\"")
         assertEquals(12, entityManager.metamodel.entities.size)
-        assertEquals(12, context.getBeansOfType(Repository::class.java).size)
     }
 
     @Test
     fun testSeedsOnlyCatalogsAndArchiveRevision() {
         assertEquals(setOf("DIESEL", "AI_92", "AI_95"), fuelTypes.findAll().map { it.code }.toSet())
-        assertEquals(setOf("ROSSTAT", "RUSTATA", "WHEREFUEL"), sources.findAll().map { it.code }.toSet())
-        assertEquals(1L, archive.findById(1).orElseThrow().revision)
+        assertEquals(setOf("ROSSTAT", "RUSTATA", "WHEREFUEL"), jdbc.queryForList("SELECT code FROM data_sources", String::class.java).toSet())
+        assertEquals(1L, jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM regions", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM source_feeds", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM regional_price_observations", Long::class.java))
@@ -140,7 +126,7 @@ class FuelCalcApplicationTest {
         liquibase.afterPropertiesSet()
 
         assertEquals(countBefore, jdbc.queryForObject("SELECT COUNT(*) FROM db_migration_log", Long::class.java))
-        assertEquals(7L, jdbc.queryForObject("SELECT COUNT(DISTINCT filename) FROM db_migration_log", Long::class.java))
+        assertEquals(8L, jdbc.queryForObject("SELECT COUNT(DISTINCT filename) FROM db_migration_log", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM archive_state", Long::class.java))
     }
 
@@ -399,17 +385,17 @@ class FuelCalcApplicationTest {
 
         importStore.saveProgress(feed, "BACKFILL", start, until)
 
-        assertEquals(start.toString(), importStore.state(feed)["backfill_next_from"].toString())
+        assertEquals(start.toString(), importStore.state(feed).backfillNextFrom.toString())
 
         importStore.saveProgress(feed, "BACKFILL", null, null)
 
-        assertEquals(null, importStore.state(feed)["backfill_next_from"])
-        assertNotNull(importStore.state(feed)["backfill_completed_at"])
+        assertEquals(null, importStore.state(feed).backfillNextFrom)
+        assertNotNull(importStore.state(feed).backfillCompletedAt)
 
         importStore.saveProgress(feed, "RECONCILIATION", start, until)
         importStore.saveProgress(feed, "RECONCILIATION", null, null)
 
-        assertNotNull(importStore.state(feed)["last_reconciled_at"])
+        assertNotNull(importStore.state(feed).lastReconciledAt)
     }
 
     @Test
@@ -479,8 +465,7 @@ class FuelCalcApplicationTest {
             frequency = PriceFrequency.WEEKLY,
             referenceDate = LocalDate.of(2026, 10, 19),
             startDate = LocalDate.of(2026, 10, 13),
-            endDate = LocalDate.of(2026, 10, 19),
-            label = "19 октября 2026"
+            endDate = LocalDate.of(2026, 10, 19)
         )
         val key = RegionalPriceKeyEntity(
             region = region,

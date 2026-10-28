@@ -3,6 +3,7 @@ package ge.becrin.fuelcalc.refueling.dto
 import ge.becrin.fuelcalc.api.dto.ApiMetaDto
 import ge.becrin.fuelcalc.prices.dto.ComparisonDto
 import ge.becrin.fuelcalc.prices.dto.PriceContextDto
+import ge.becrin.fuelcalc.sources.dto.SourceUpdateDto
 
 data class RefuelingCalculationDto(
     val meta: ApiMetaDto,
@@ -15,11 +16,9 @@ data class RefuelingCalculationDto(
 
     val baseTotalRub: String,
 
-    val expectedSnapshotId: String?,
-
     val snapshotChanged: Boolean?,
 
-    val comparison: ComparisonDto,
+    val comparison: ComparisonDto<RefuelingRowDto>,
 
-    val data: List<RefuelingRowDto>
+    val sourceUpdates: Map<String, SourceUpdateDto>
 )

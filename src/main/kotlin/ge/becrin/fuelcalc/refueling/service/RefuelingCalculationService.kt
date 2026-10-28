@@ -4,10 +4,10 @@ import ge.becrin.fuelcalc.api.dto.ErrorDetailDto
 import ge.becrin.fuelcalc.api.error.ApiException
 import ge.becrin.fuelcalc.archive.service.ArchiveReadService
 import ge.becrin.fuelcalc.prices.ComparisonStatus
-import ge.becrin.fuelcalc.prices.dto.AvailablePriceCellDto
 import ge.becrin.fuelcalc.prices.service.ComparisonConverter
 import ge.becrin.fuelcalc.prices.service.ComparisonResolver
 import ge.becrin.fuelcalc.prices.service.PriceReadContextFactory
+import ge.becrin.fuelcalc.prices.service.PriceCellConverter
 import ge.becrin.fuelcalc.refueling.RefuelingRelation
 import ge.becrin.fuelcalc.refueling.dto.RefuelingCalculateRequestDto
 import ge.becrin.fuelcalc.refueling.dto.RefuelingCalculationDto
@@ -24,6 +24,8 @@ class RefuelingCalculationService(
     private val resolver: ComparisonResolver,
 
     private val comparisons: ComparisonConverter,
+
+    private val cells: PriceCellConverter,
 
     private val calculator: RefuelingCalculator
 ) {
@@ -51,10 +53,9 @@ class RefuelingCalculationService(
                 )
             }
 
-            val comparison = comparisons.toDto(snapshot, context)
             val totals = calculator.totals(volume, snapshot.rows.associate { it.region.code to it.price })
             val base = totals.getValue(context.selection.base.code)
-            val data = comparison.data.map { row ->
+            val comparison = comparisons.convert(snapshot) { row ->
                 val total = totals.getValue(row.region.code)
                 val difference = total.subtract(base)
                 val relation =
@@ -66,12 +67,15 @@ class RefuelingCalculationService(
                     }
 
                 RefuelingRowDto(
-                    row.region,
-                    row.isBase,
-                    checkNotNull(row.price as? AvailablePriceCellDto),
-                    total.toPlainString(),
-                    difference.toPlainString(),
-                    relation
+                    region = row.region,
+                    price = cells.available(checkNotNull(row.price)),
+                    latestAvailableDate = context.bounds[row.region.code]?.last,
+                    differenceRubPerLiter = row.difference?.toPlainString(),
+                    isLowest = row.isLowest,
+                    isHighest = row.isHighest,
+                    totalRub = total.toPlainString(),
+                    differenceRub = difference.toPlainString(),
+                    relation = relation
                 )
             }
 
@@ -81,10 +85,9 @@ class RefuelingCalculationService(
                 volume.setScale(2).toPlainString(),
                 "RUB",
                 base.toPlainString(),
-                input.expectedSnapshotId,
                 input.expectedSnapshotId?.let { it != snapshot.snapshotId },
                 comparison,
-                data
+                context.updates
             )
         }
 

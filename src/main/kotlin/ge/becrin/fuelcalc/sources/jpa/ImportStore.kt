@@ -1,98 +1,102 @@
 package ge.becrin.fuelcalc.sources.jpa
 
+import ge.becrin.fuelcalc.archive.jpa.ArchiveStateRepository
+import ge.becrin.fuelcalc.regions.jpa.RegionEntity
+import ge.becrin.fuelcalc.regions.jpa.RegionRepository
+import ge.becrin.fuelcalc.sources.ImportRunStatus
+import ge.becrin.fuelcalc.sources.PriceAggregationMethod
+import ge.becrin.fuelcalc.sources.SourceUpdateStatus
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.model.FeedDefinition
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.SourceImportException
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
-import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 
 @Repository
 class ImportStore(
-    val jdbc: NamedParameterJdbcTemplate,
+    private val entityManager: EntityManager,
+
+    private val archive: ArchiveStateRepository,
+
+    private val feeds: SourceFeedRepository,
+
+    private val runs: ImportRunRepository,
+
+    private val states: SourceFetchStateRepository,
+
+    private val regions: RegionRepository,
 
     private val properties: ImportProperties,
 
     private val clock: Clock
 ) {
-    fun batch(
-        sql: String,
-        rows: List<Map<String, Any?>>
-    ) {
-        for (chunk in rows.chunked(properties.batchSize)) {
-            jdbc.batchUpdate(sql, chunk.map { MapSqlParameterSource(it) }.toTypedArray())
-        }
-    }
-
     @Transactional
-    fun initialize(feeds: List<FeedDefinition>) {
-        batch(
-            """
-            INSERT INTO source_feeds (
-                code, publisher_code, provider_code, external_code, frequency, aggregation_method,
-                sampling_policy_code, enabled, update_status
-            ) VALUES (:code, :publisher, :provider, :external, :frequency, :method, :policy, TRUE, 'UNKNOWN')
-            ON CONFLICT (code) DO NOTHING
-            """.trimIndent(),
-            feeds.map { feed ->
-                mapOf(
-                    "code" to feed.code, "publisher" to feed.publisher, "provider" to feed.provider,
-                    "external" to feed.externalCode, "frequency" to feed.frequency.name,
-                    "method" to if (feed.samplingPolicy == null) "OFFICIAL_STATISTICS" else "STATION_SAMPLE_MEAN",
-                    "policy" to feed.samplingPolicy
+    fun initialize(definitions: List<FeedDefinition>) {
+        lockArchive()
+
+        val configured = feeds.findAll().associateBy { it.code }.toMutableMap()
+        val existingStates = states.findAll().map { it.feedId }.toSet()
+
+        for (definition in definitions) {
+            if (definition.code !in configured) {
+                val feed = feeds.save(
+                    SourceFeedEntity(
+                        code = definition.code,
+                        publisher = entityManager.getReference(DataSourceEntity::class.java, definition.publisher),
+                        provider = entityManager.getReference(DataSourceEntity::class.java, definition.provider),
+                        externalCode = definition.externalCode,
+                        frequency = definition.frequency,
+                        aggregationMethod =
+                            if (definition.samplingPolicy == null) PriceAggregationMethod.OFFICIAL_STATISTICS
+                            else PriceAggregationMethod.STATION_SAMPLE_MEAN,
+                        samplingPolicyCode = definition.samplingPolicy
+                    )
                 )
-            }
-        )
-        jdbc.update(
-            """
-            INSERT INTO source_fetch_states (feed_id, updated_at)
-            SELECT id, :now FROM source_feeds
-            ON CONFLICT (feed_id) DO NOTHING
-            """.trimIndent(),
-            mapOf("now" to now())
-        )
-        jdbc.update(
-            """
-            UPDATE import_runs
-            SET status = 'FAILED', finished_at = :now, error_code = 'INTERRUPTED', error_message = 'Application restarted'
-            WHERE status = 'RUNNING'
-            """.trimIndent(),
-            mapOf("now" to now())
-        )
-    }
 
-    fun savedRegions(): List<RegionCatalog.Region> =
-        jdbc.query("SELECT code, name FROM regions ORDER BY code", emptyMap<String, Any>()) { row, _ ->
-            RegionCatalog.Region(row.getString("code"), row.getString("name"))
+                configured[feed.code] = feed
+            }
         }
 
+        for (feed in configured.values) {
+            if (feed.id !in existingStates) {
+                entityManager.persist(SourceFetchStateEntity(feed = feed, updatedAt = now()))
+            }
+        }
+
+        runs.interruptRunning(now())
+    }
+
+    @Transactional(readOnly = true)
+    fun savedRegions(): List<RegionCatalog.Region> =
+        regions.findAll().sortedBy { it.code }.map { RegionCatalog.Region(it.code, it.name) }
+
     @Transactional
-    fun synchronizeRegions(regions: List<RegionCatalog.Region>) {
-        require(regions.isNotEmpty()) { "Region catalog must not be empty" }
+    fun synchronizeRegions(catalog: List<RegionCatalog.Region>) {
+        require(catalog.isNotEmpty()) { "Region catalog must not be empty" }
 
         lockArchive()
 
         var changed = false
-        val timestamp = now()
 
-        for (chunk in regions.chunked(properties.batchSize)) {
-            val counts = jdbc.batchUpdate(
-                """
-                INSERT INTO regions (code, name, created_at)
-                VALUES (:code, :name, :now)
-                ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
-                WHERE regions.name IS DISTINCT FROM EXCLUDED.name
-                """.trimIndent(),
-                chunk.map { MapSqlParameterSource(mapOf("code" to it.code, "name" to it.name, "now" to timestamp)) }.toTypedArray()
-            )
+        for (chunk in catalog.chunked(properties.batchSize)) {
+            val existing = regions.findSelected(chunk.map { it.code }).associateBy { it.code }.toMutableMap()
 
-            changed = changed || counts.any { it != 0 }
+            for (region in chunk) {
+                val entity = existing[region.code]
+
+                if (entity == null) {
+                    existing[region.code] = regions.save(RegionEntity(code = region.code, name = region.name, createdAt = now()))
+                    changed = true
+                } else if (entity.name != region.name) {
+                    entity.name = region.name
+                    changed = true
+                }
+            }
         }
 
         if (changed) {
@@ -102,23 +106,9 @@ class ImportStore(
 
     @Transactional
     fun begin(feed: FeedDefinition): Long? {
-        val rows = jdbc.queryForList(
-            """
-            SELECT f.id FROM source_feeds f
-            INNER JOIN source_fetch_states s ON s.feed_id = f.id
-            WHERE f.code = :code AND f.enabled
-                AND (s.next_fetch_not_before IS NULL OR s.next_fetch_not_before <= :now)
-            """.trimIndent(),
-            mapOf("code" to feed.code, "now" to now())
-        )
-        val id = (rows.singleOrNull()?.get("id") as? Number)?.toLong() ?: return null
+        val state = states.findReady(feed.code, now()) ?: return null
 
-        return jdbc.queryForObject(
-            "INSERT INTO import_runs (feed_id, started_at, status, imported_count, rejected_count) " +
-                "VALUES (:id, :now, 'RUNNING', 0, 0) RETURNING id",
-            mapOf("id" to id, "now" to now()),
-            Long::class.java
-        )
+        return runs.save(ImportRunEntity(feed = state.feed, startedAt = now())).id
     }
 
     @Transactional
@@ -129,53 +119,41 @@ class ImportStore(
         freshness: String
     ) {
         lockArchive()
-        val args = mapOf(
-            "id" to runId, "now" to now(), "count" to count, "status" to if (error == null) "SUCCEEDED" else "FAILED",
-            "code" to error?.code, "message" to error?.message, "freshness" to if (error == null) freshness else "UNAVAILABLE",
-            "retry" to error?.retryAt?.let(Timestamp::from)
-        )
 
-        jdbc.update(
-            """
-            UPDATE import_runs
-            SET status = :status, finished_at = :now, imported_count = :count, error_code = :code, error_message = :message
-            WHERE id = :id AND status = 'RUNNING'
-            """.trimIndent(),
-            args
-        )
-        jdbc.update(
-            """
-            UPDATE source_feeds
-            SET update_status = :freshness, update_message = :message,
-                last_success_at = CASE WHEN :status = 'SUCCEEDED' THEN :now ELSE last_success_at END
-            WHERE id = (SELECT feed_id FROM import_runs WHERE id = :id)
-            """.trimIndent(),
-            args
-        )
+        val run = checkNotNull(runs.findWithFeed(runId))
+        val timestamp = now()
 
-        if (error?.retryAt != null) {
-            jdbc.update(
-                """
-                UPDATE source_fetch_states SET next_fetch_not_before = :retry, updated_at = :now
-                WHERE feed_id IN (
-                    SELECT id FROM source_feeds WHERE provider_code = (
-                        SELECT f.provider_code FROM source_feeds f
-                        INNER JOIN import_runs r ON r.feed_id = f.id WHERE r.id = :id
-                    )
-                )
-                """.trimIndent(),
-                args
-            )
+        if (run.status == ImportRunStatus.RUNNING) {
+            run.status = if (error == null) ImportRunStatus.SUCCEEDED else ImportRunStatus.FAILED
+            run.finishedAt = timestamp
+            run.importedCount = count
+            run.errorCode = error?.code
+            run.errorMessage = error?.message
+        }
+
+        run.feed.updateStatus = if (error == null) SourceUpdateStatus.valueOf(freshness) else SourceUpdateStatus.UNAVAILABLE
+
+        if (error == null) {
+            run.feed.lastSuccessAt = timestamp
+        }
+
+        error?.retryAt?.let { retryAt ->
+            for (state in states.findForProvider(run.feed.provider.code)) {
+                state.nextFetchNotBefore = retryAt
+                state.updatedAt = timestamp
+            }
         }
 
         bumpRevision()
     }
 
-    fun state(feed: FeedDefinition): Map<String, Any?> =
-        jdbc.queryForMap(
-            "SELECT s.* FROM source_fetch_states s INNER JOIN source_feeds f ON f.id = s.feed_id WHERE f.code = :code",
-            mapOf("code" to feed.code)
-        )
+    @Transactional(readOnly = true)
+    fun state(feed: FeedDefinition): SourceFetchStateEntity =
+        checkNotNull(states.findByFeedCode(feed.code))
+
+    @Transactional(readOnly = true)
+    fun lastSuccess(feed: FeedDefinition): Instant? =
+        feeds.lastSuccess(feed.code)
 
     @Transactional
     fun saveProgress(
@@ -184,35 +162,34 @@ class ImportStore(
         next: LocalDate?,
         until: LocalDate?
     ) {
-        val args = mapOf("code" to feed.code, "next" to next, "until" to until, "now" to now())
-        val sql =
-            if (mode == "BACKFILL") {
-                """
-                UPDATE source_fetch_states
-                SET backfill_next_from = :next, backfill_until = :until, updated_at = :now,
-                    backfill_completed_at = CASE WHEN CAST(:next AS date) IS NULL THEN CAST(:now AS timestamptz) ELSE NULL END
-                WHERE feed_id = (SELECT id FROM source_feeds WHERE code = :code)
-                """.trimIndent()
-            } else {
-                """
-                UPDATE source_fetch_states
-                SET reconciliation_next_from = :next, reconciliation_until = :until, updated_at = :now,
-                    last_reconciled_at = CASE WHEN CAST(:next AS date) IS NULL THEN :now ELSE last_reconciled_at END
-                WHERE feed_id = (SELECT id FROM source_feeds WHERE code = :code)
-                """.trimIndent()
+        val state = state(feed)
+        val timestamp = now()
+        state.updatedAt = timestamp
+
+        if (mode == "BACKFILL") {
+            state.backfillNextFrom = next
+            state.backfillUntil = until
+            state.backfillCompletedAt = if (next == null) timestamp else null
+        } else {
+            state.reconciliationNextFrom = next
+            state.reconciliationUntil = until
+
+            if (next == null) {
+                state.lastReconciledAt = timestamp
             }
-
-        jdbc.update(sql, args)
+        }
     }
 
+    @Transactional
     fun lockArchive() {
-        jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1 FOR UPDATE", emptyMap<String, Any>(), Long::class.java)
+        archive.lockForPublication()
     }
 
+    @Transactional
     fun bumpRevision() {
-        jdbc.update("UPDATE archive_state SET revision = revision + 1, updated_at = :now WHERE id = 1", mapOf("now" to now()))
+        archive.advanceRevision(now())
     }
 
-    fun now(): Timestamp =
-        Timestamp.from(clock.instant())
+    fun now(): Instant =
+        clock.instant()
 }

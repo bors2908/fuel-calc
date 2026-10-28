@@ -2,53 +2,27 @@ package ge.becrin.fuelcalc.sources.service
 
 import ge.becrin.fuelcalc.prices.PriceFrequency
 import ge.becrin.fuelcalc.sources.PriceSource
-import ge.becrin.fuelcalc.sources.SourceUpdateStatus
 import ge.becrin.fuelcalc.sources.dto.SourceUpdateDto
-import org.springframework.jdbc.core.JdbcTemplate
+import ge.becrin.fuelcalc.sources.jpa.SourceFeedRepository
 import org.springframework.stereotype.Repository
+import org.springframework.transaction.annotation.Transactional
 
 @Repository
-class SourceUpdateReader(private val jdbc: JdbcTemplate) {
-    data class Updates(
-        val byFeed: Map<Long, SourceUpdateDto>,
-
-        val bySource: Map<Pair<PriceSource, PriceFrequency>, SourceUpdateDto>
-    ) {
-        fun feed(id: Long): SourceUpdateDto =
-            byFeed[id] ?: unknown()
-
-        fun source(
-            provider: PriceSource,
-            frequency: PriceFrequency
-        ): SourceUpdateDto =
-            bySource[provider to frequency] ?: unknown()
-
-        private fun unknown(): SourceUpdateDto =
-            SourceUpdateDto(SourceUpdateStatus.UNKNOWN, null, null, null)
-    }
-
-    fun read(): Updates {
-        val byFeed = mutableMapOf<Long, SourceUpdateDto>()
-        val bySource = mutableMapOf<Pair<PriceSource, PriceFrequency>, SourceUpdateDto>()
-        jdbc.query("SELECT * FROM source_feeds ORDER BY id") { row ->
-            val status = SourceUpdateStatus.valueOf(row.getString("update_status"))
-            val message =
-                when (status) {
-                    SourceUpdateStatus.UNAVAILABLE -> "Источник временно недоступен; показаны сохранённые данные"
-                    SourceUpdateStatus.DELAYED -> "Обновление источника задерживается"
-                    else -> null
-                }
-            val value = SourceUpdateDto(
-                status,
-                row.getTimestamp("last_success_at")?.toInstant(),
-                row.getTimestamp("next_expected_publication_at")?.toInstant(),
-                message
-            )
-            byFeed[row.getLong("id")] = value
-            bySource[PriceSource.valueOf(row.getString("provider_code")) to
-                PriceFrequency.valueOf(row.getString("frequency"))] = value
+class SourceUpdateReader(private val feeds: SourceFeedRepository) {
+    @Transactional(readOnly = true)
+    fun read(frequencies: Collection<PriceFrequency> = PriceFrequency.entries): Map<String, SourceUpdateDto> {
+        if (frequencies.isEmpty()) {
+            return emptyMap()
         }
 
-        return Updates(byFeed, bySource)
+        return feeds.findForFrequencies(frequencies).associate { feed ->
+            feed.code to SourceUpdateDto(
+                provider = PriceSource.valueOf(feed.provider.code),
+                frequency = feed.frequency,
+                status = feed.updateStatus,
+                lastSuccessAt = feed.lastSuccessAt,
+                nextExpectedPublicationAt = feed.nextExpectedPublicationAt
+            )
+        }
     }
 }

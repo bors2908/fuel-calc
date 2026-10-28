@@ -1,7 +1,6 @@
 package ge.becrin.fuelcalc.prices.dto
 
 import com.fasterxml.jackson.annotation.JsonInclude
-import ge.becrin.fuelcalc.prices.ComparisonReason
 import ge.becrin.fuelcalc.prices.ComparisonStatus
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 
@@ -21,9 +20,5 @@ data class ComparisonSummaryDto(
 
     val lowestDifferenceRubPerLiter: String?,
 
-    val hasNewerObservations: Boolean,
-
-    val reason: ComparisonReason?,
-
-    val message: String?
+    val hasNewerObservations: Boolean
 )

@@ -1,13 +1,13 @@
 package ge.becrin.fuelcalc.prices.service
 
 import ge.becrin.fuelcalc.api.SortOrder
-import ge.becrin.fuelcalc.prices.ComparisonReason
 import ge.becrin.fuelcalc.prices.ComparisonSortBy
 import ge.becrin.fuelcalc.prices.ComparisonStatus
 import ge.becrin.fuelcalc.prices.dto.ComparisonDto
 import ge.becrin.fuelcalc.prices.dto.ComparisonRowDto
 import ge.becrin.fuelcalc.prices.dto.ComparisonSummaryDto
 import ge.becrin.fuelcalc.prices.model.ComparisonSnapshot
+import ge.becrin.fuelcalc.prices.model.ComparisonRow
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import org.springframework.stereotype.Component
 
@@ -18,7 +18,25 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
         context: PriceReadContextFactory.ReadContext,
         sortBy: ComparisonSortBy = ComparisonSortBy.PRICE,
         sortOrder: SortOrder = SortOrder.ASC
-    ): ComparisonDto {
+    ): ComparisonDto<ComparisonRowDto> =
+        convert(snapshot, sortBy, sortOrder) { row ->
+            ComparisonRowDto(
+                region = row.region,
+                isBase = row.isBase,
+                price = row.price?.let(cells::available) ?: cells.missing(),
+                latestAvailableDate = context.bounds[row.region.code]?.last,
+                differenceRubPerLiter = row.difference?.toPlainString(),
+                isLowest = row.isLowest,
+                isHighest = row.isHighest
+            )
+        }
+
+    fun <T> convert(
+        snapshot: ComparisonSnapshot,
+        sortBy: ComparisonSortBy = ComparisonSortBy.PRICE,
+        sortOrder: SortOrder = SortOrder.ASC,
+        rowConverter: (ComparisonRow) -> T
+    ): ComparisonDto<T> {
         val comparable = snapshot.status == ComparisonStatus.AVAILABLE
         val unavailable = snapshot.status == ComparisonStatus.NO_DATA || snapshot.status == ComparisonStatus.NO_COMMON_PERIOD
         val actualSort = if (unavailable && sortBy == ComparisonSortBy.PRICE) ComparisonSortBy.REGION_NAME else sortBy
@@ -36,15 +54,15 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
         val data = sorted.map { region ->
             val row = rows[region.code]
             val isBase = region.code == snapshot.selection.base.code
-            val price = row?.let { cells.available(it, context.bounds[region.code]?.last, context.updates) } ?: cells.missing()
-
-            ComparisonRowDto(
-                region,
-                isBase,
-                price,
-                if (comparable && !isBase) checkNotNull(row).price.subtract(checkNotNull(base).price).toPlainString() else null,
-                comparable && !equal && row?.price?.compareTo(minimum) == 0,
-                comparable && !equal && row?.price?.compareTo(maximum) == 0
+            rowConverter(
+                ComparisonRow(
+                    region = region,
+                    isBase = isBase,
+                    price = row,
+                    difference = if (comparable && !isBase) checkNotNull(row).price.subtract(checkNotNull(base).price) else null,
+                    isLowest = comparable && !equal && row?.price?.compareTo(minimum) == 0,
+                    isHighest = comparable && !equal && row?.price?.compareTo(maximum) == 0
+                )
             )
         }
 
@@ -56,9 +74,7 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
             actualOrder,
             data,
             if (comparable) equal else null,
-            snapshot.hasNewerObservations,
-            reason(snapshot.status),
-            message(snapshot.status)
+            snapshot.hasNewerObservations
         )
     }
 
@@ -78,25 +94,7 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
             minimum?.toPlainString(),
             lowest,
             minimum?.subtract(checkNotNull(base).price)?.toPlainString(),
-            snapshot.hasNewerObservations,
-            reason(snapshot.status),
-            message(snapshot.status)
+            snapshot.hasNewerObservations
         )
     }
-
-    private fun reason(status: ComparisonStatus): ComparisonReason? =
-        when (status) {
-            ComparisonStatus.AVAILABLE -> null
-            ComparisonStatus.SINGLE_REGION -> ComparisonReason.ADD_REGIONS_TO_COMPARE
-            ComparisonStatus.NO_COMMON_PERIOD -> ComparisonReason.NO_COMMON_PERIOD
-            ComparisonStatus.NO_DATA -> ComparisonReason.NO_DATA_IN_RANGE
-        }
-
-    private fun message(status: ComparisonStatus): String? =
-        when (status) {
-            ComparisonStatus.AVAILABLE -> null
-            ComparisonStatus.SINGLE_REGION -> "Добавьте регионы для сравнения"
-            ComparisonStatus.NO_COMMON_PERIOD -> "В выбранном диапазоне нет общего периода для всех регионов"
-            ComparisonStatus.NO_DATA -> "В выбранном диапазоне нет наблюдений"
-        }
 }

@@ -1,6 +1,7 @@
 package ge.becrin.fuelcalc.sources.wherefuel
 
 import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyRepository
 import ge.becrin.fuelcalc.prices.service.RegionalPricePublicationService
 import ge.becrin.fuelcalc.prices.service.RegionalPriceSampleService
 import ge.becrin.fuelcalc.sources.config.ImportProperties
@@ -25,6 +26,8 @@ class WhereFuelImportService(
     private val publisher: RegionalPricePublicationService,
 
     private val store: ImportStore,
+
+    private val keys: RegionalPriceKeyRepository,
 
     private val properties: ImportProperties,
 
@@ -90,12 +93,7 @@ class WhereFuelImportService(
                             ?: SourceImportException("PUBLISH_FAILED", "Sample publication failed: ${error.message}", cause = error)
                     }
 
-                    val latest = store.jdbc.queryForObject(
-                        "SELECT MAX(p.reference_date) FROM regional_price_keys k " +
-                            "INNER JOIN price_periods p ON p.id = k.period_id " +
-                            "WHERE k.provider_code = 'WHEREFUEL' AND p.frequency = :frequency AND k.current_observation_id IS NOT NULL",
-                        mapOf("frequency" to frequency.name), LocalDate::class.java
-                    )
+                    val latest = keys.latestDate("WHEREFUEL", frequency)
                     val maxAge = if (frequency == PriceFrequency.WEEKLY) 14L else 62L
                     val freshness =
                         when {

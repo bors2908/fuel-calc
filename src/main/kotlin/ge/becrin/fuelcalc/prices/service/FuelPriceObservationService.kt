@@ -27,7 +27,7 @@ class FuelPriceObservationService(
             }
 
             val id = observationId.toLongOrNull()?.takeIf { it > 0 && it.toString() == observationId }
-            val row = id?.let(query::details) ?: throw ApiException(
+            val details = id?.let(query::details) ?: throw ApiException(
                 404,
                 "ResourceNotFound",
                 "Наблюдение не найдено",
@@ -35,25 +35,31 @@ class FuelPriceObservationService(
                     ErrorDetailDto("observationId", "OBSERVATION_NOT_FOUND", "Наблюдение не найдено")
                 )
             )
-            val price = cells.available(row, query.latestForProvider(row), states.read())
+            val row = details.price
+            val price = cells.available(row)
 
             PriceObservationResponseDto(
                 meta,
                 PriceObservationDto(
-                    row.id.toString(),
-                    row.region,
-                    row.fuel,
-                    PriceBasis.REGIONAL_CONSUMER_AVERAGE,
-                    "RUB/L",
-                    price,
-                    row.publicationDate,
-                    row.publishedAt,
-                    row.loadedAt,
-                    row.publicationUrl,
-                    row.attribution,
-                    row.methodologyUrl,
-                    row.note
-                )
+                    region = row.region,
+                    fuelType = row.fuel,
+                    basis = PriceBasis.REGIONAL_CONSUMER_AVERAGE,
+                    unit = "RUB/L",
+                    price = price,
+                    latestAvailableDate = query.latestForProvider(row),
+                    publisher = details.publisher,
+                    providerUrl = details.providerUrl,
+                    datasetId = details.datasetId,
+                    publicationId = details.publicationId,
+                    publicationDate = details.publicationDate,
+                    publishedAt = details.publishedAt,
+                    loadedAt = details.loadedAt,
+                    publicationUrl = details.publicationUrl,
+                    attribution = details.attribution,
+                    methodologyUrl = details.methodologyUrl,
+                    note = details.note
+                ),
+                states.read(listOf(row.period.frequency))
             )
         }
 }

@@ -29,7 +29,7 @@ class FuelPriceTrendService(
                 val available = byRegion[region.code].orEmpty().associateBy { it.period.key }
                 val bounds = context.bounds[region.code]
                 val points = calendar.map { period ->
-                    available[period.key]?.let { cells.available(it, bounds?.last, context.updates) }
+                    available[period.key]?.let { cells.available(it) }
                         ?: cells.missing(MissingPriceReason.NO_OBSERVATION_FOR_PERIOD, period)
                 }
                 val status =
@@ -42,6 +42,6 @@ class FuelPriceTrendService(
                 RegionPriceSeriesDto(region, status, bounds?.first, bounds?.last, points)
             }
 
-            PriceTrendDto(meta, context.dto, data)
+            PriceTrendDto(meta, context.dto, data, context.updates)
         }
 }

@@ -12,10 +12,9 @@ import ge.becrin.fuelcalc.refueling.service.RefuelingCalculator
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import ge.becrin.fuelcalc.sources.PriceAggregationMethod
 import ge.becrin.fuelcalc.sources.PriceSource
-import ge.becrin.fuelcalc.sources.dto.SourceRefDto
+import ge.becrin.fuelcalc.sources.dto.SourceLabelDto
 import ge.becrin.fuelcalc.sources.dto.SourceSummaryDto
 import org.junit.jupiter.api.Test
-import java.time.Instant
 import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -93,7 +92,7 @@ class PriceDomainTest {
         id: Long,
         region: RegionRefDto
     ): PriceRow {
-        val source = SourceRefDto("ROSSTAT", "Росстат", null)
+        val source = SourceLabelDto("ROSSTAT", "Росстат")
 
         return PriceRow(
             id,
@@ -101,21 +100,7 @@ class PriceDomainTest {
             selection.fuel,
             PricePeriodDto("WEEKLY:$date", PriceFrequency.WEEKLY, date, date.toString(), date.minusDays(6), date),
             "72.50".toBigDecimal(),
-            1,
-            SourceSummaryDto(
-                source,
-                source,
-                "test",
-                null,
-                PriceAggregationMethod.OFFICIAL_STATISTICS
-            ),
-            null,
-            null,
-            Instant.parse("2026-10-26T09:00:00Z"),
-            null,
-            "Test fixture",
-            null,
-            null
+            SourceSummaryDto(source, "ROSSTAT_WEEKLY", PriceAggregationMethod.OFFICIAL_STATISTICS)
         )
     }
 }

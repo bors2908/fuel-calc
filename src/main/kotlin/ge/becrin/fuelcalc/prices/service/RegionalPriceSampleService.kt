@@ -1,13 +1,19 @@
 package ge.becrin.fuelcalc.prices.service
 
+import ge.becrin.fuelcalc.fuels.jpa.FuelTypeRepository
 import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.jpa.PricePeriodRepository
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceSampleEntity
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceSampleRepository
+import ge.becrin.fuelcalc.regions.jpa.RegionRepository
+import ge.becrin.fuelcalc.sources.jpa.ImportRunRepository
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.model.PreparedPublication
 import ge.becrin.fuelcalc.sources.model.PricePeriod
 import ge.becrin.fuelcalc.sources.model.RegionalDailySample
 import ge.becrin.fuelcalc.sources.model.RegionalPriceFact
-import ge.becrin.fuelcalc.sources.wherefuel.RegionalStationSampler
 import ge.becrin.fuelcalc.sources.service.ImportHash
+import ge.becrin.fuelcalc.sources.wherefuel.RegionalStationSampler
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -19,135 +25,115 @@ import java.time.temporal.ChronoUnit
 
 @Service
 class RegionalPriceSampleService(
-    private val store: ImportStore
+    private val store: ImportStore,
+
+    private val regions: RegionRepository,
+
+    private val fuels: FuelTypeRepository,
+
+    private val runs: ImportRunRepository,
+
+    private val periods: PricePeriodRepository,
+
+    private val samples: RegionalPriceSampleRepository
 ) {
     @Transactional
     fun append(
         runId: Long,
-        samples: List<RegionalDailySample>
+        incoming: List<RegionalDailySample>
     ) {
-        if (samples.isEmpty()) {
+        if (incoming.isEmpty()) {
             return
         }
 
         store.lockArchive()
-        val regions = store.jdbc.queryForList(
-            "SELECT id, code FROM regions WHERE code IN (:codes)", mapOf("codes" to samples.map { it.regionCode }.distinct())
-        ).associate { it["code"].toString() to it.getValue("id") }
-        val existing = store.jdbc.queryForList(
-            """
-            SELECT DISTINCT ON (region_id, fuel_type_code, sample_date) region_id, fuel_type_code, sample_date, content_hash
-            FROM regional_price_samples
-            WHERE region_id IN (:regions) AND provider_code = 'WHEREFUEL' AND sampling_policy_code = :policy
-                AND sample_date IN (:dates)
-            ORDER BY region_id, fuel_type_code, sample_date, collected_at DESC, id DESC
-            """.trimIndent(),
-            mapOf(
-                "regions" to regions.values, "policy" to RegionalStationSampler.POLICY,
-                "dates" to samples.map { it.collectedAt.atZone(ZONE).toLocalDate() }.distinct()
-            )
-        ).associate { Triple(it["region_id"], it["fuel_type_code"], it["sample_date"].toString()) to it["content_hash"] }
-        val rows = samples.mapNotNull { sample ->
-            val region = regions.getValue(sample.regionCode)
+
+        val regionByCode = regions.findSelected(incoming.map { it.regionCode }.distinct()).associateBy { it.code }
+        require(incoming.all { it.regionCode in regionByCode }) { "Unmapped region code" }
+
+        val existing = samples.findLatestForDates(
+            regions = regionByCode.values,
+            dates = incoming.map { it.collectedAt.atZone(ZONE).toLocalDate() }.distinct(),
+            policy = RegionalStationSampler.POLICY
+        ).associate { Triple(it.region.code, it.fuelType.code, it.sampleDate) to it.contentHash }
+        val run = checkNotNull(runs.findWithFeed(runId))
+        val rows = incoming.mapNotNull { sample ->
             val date = sample.collectedAt.atZone(ZONE).toLocalDate()
 
-            if (existing[Triple(region, sample.fuelCode, date.toString())] == sample.contentHash) {
+            if (existing[Triple(sample.regionCode, sample.fuelCode, date)] == sample.contentHash) {
                 null
             } else {
-                mapOf<String, Any?>(
-                    "region" to region, "fuel" to sample.fuelCode, "date" to date, "policy" to RegionalStationSampler.POLICY,
-                    "price" to sample.price, "stations" to sample.stationCount, "collected" to Timestamp.from(sample.collectedAt),
-                    "oldest" to Timestamp.from(sample.oldestPriceAt), "newest" to Timestamp.from(sample.newestPriceAt),
-                    "run" to runId, "hash" to sample.contentHash
+                RegionalPriceSampleEntity(
+                    provider = run.feed.provider,
+                    region = regionByCode.getValue(sample.regionCode),
+                    fuelType = fuels.getReferenceById(sample.fuelCode),
+                    sampleDate = date,
+                    samplingPolicyCode = RegionalStationSampler.POLICY,
+                    priceRubPerLiter = sample.price,
+                    stationCount = sample.stationCount,
+                    collectedAt = sample.collectedAt,
+                    oldestPriceAt = sample.oldestPriceAt,
+                    newestPriceAt = sample.newestPriceAt,
+                    firstImportRun = run,
+                    contentHash = sample.contentHash
                 )
             }
         }
 
-        store.batch(
-            """
-            INSERT INTO regional_price_samples (
-                provider_code, region_id, fuel_type_code, sample_date, sampling_policy_code, price_rub_per_liter,
-                station_count, collected_at, oldest_price_at, newest_price_at, first_import_run_id, content_hash
-            ) VALUES ('WHEREFUEL', :region, :fuel, :date, :policy, :price, :stations, :collected, :oldest, :newest, :run, :hash)
-            """.trimIndent(),
-            rows
-        )
+        samples.saveAll(rows)
     }
 
+    @Transactional(readOnly = true)
     fun prepare(
         frequency: PriceFrequency,
         today: LocalDate,
         url: String
     ): List<PreparedPublication> {
-        val periods = store.jdbc.queryForList(
-            """
-            SELECT frequency, reference_date, start_date, end_date FROM price_periods
-            WHERE frequency = :frequency AND reference_date <= :today AND end_date < :today AND start_date IS NOT NULL
-                AND end_date >= (SELECT MIN(sample_date) FROM regional_price_samples WHERE sampling_policy_code = :policy)
-            ORDER BY reference_date
-            """.trimIndent(),
-            mapOf("frequency" to frequency.name, "today" to today, "policy" to RegionalStationSampler.POLICY)
-        ).map { row ->
-            PricePeriod(
-                frequency, LocalDate.parse(row["reference_date"].toString()),
-                LocalDate.parse(row["start_date"].toString()), LocalDate.parse(row["end_date"].toString())
-            )
+        val first = samples.firstDate(RegionalStationSampler.POLICY) ?: return emptyList()
+        val completed = periods.findCompleted(frequency, today, first).map { period ->
+            PricePeriod(period.frequency, period.referenceDate, period.startDate, period.endDate)
         }.toMutableList()
 
         if (frequency == PriceFrequency.MONTHLY) {
-            val first = store.jdbc.queryForObject(
-                "SELECT MIN(sample_date) FROM regional_price_samples WHERE sampling_policy_code = :policy",
-                mapOf("policy" to RegionalStationSampler.POLICY), LocalDate::class.java
-            )
-            var month = first?.withDayOfMonth(1)
+            var month = first.withDayOfMonth(1)
 
-            while (month != null && month.plusMonths(1) <= today) {
+            while (month.plusMonths(1) <= today) {
                 val end = month.plusMonths(1).minusDays(1)
-                val candidate = PricePeriod(frequency, end, month, end)
 
-                if (periods.none { it.referenceDate == end }) {
-                    periods.add(candidate)
+                if (completed.none { it.referenceDate == end }) {
+                    completed.add(PricePeriod(frequency, end, month, end))
                 }
 
                 month = month.plusMonths(1)
             }
         }
 
-        if (periods.isEmpty()) {
+        if (completed.isEmpty()) {
             return emptyList()
         }
 
-        val daily = store.jdbc.queryForList(
-            """
-            SELECT DISTINCT ON (s.region_id, s.fuel_type_code, s.sample_date)
-                r.code, s.fuel_type_code, s.sample_date, s.price_rub_per_liter, s.station_count, s.collected_at, s.content_hash, s.id
-            FROM regional_price_samples s
-            INNER JOIN regions r ON r.id = s.region_id
-            WHERE s.provider_code = 'WHEREFUEL' AND s.sampling_policy_code = :policy
-                AND s.sample_date BETWEEN :start AND :end
-            ORDER BY s.region_id, s.fuel_type_code, s.sample_date, s.collected_at DESC, s.id DESC
-            """.trimIndent(),
-            mapOf(
-                "policy" to RegionalStationSampler.POLICY,
-                "start" to periods.minOf { checkNotNull(it.startDate) }, "end" to periods.maxOf { checkNotNull(it.endDate) }
-            )
+        val daily = samples.findLatestInRange(
+            from = completed.minOf { checkNotNull(it.startDate) },
+            until = completed.maxOf { checkNotNull(it.endDate) },
+            policy = RegionalStationSampler.POLICY
         )
 
-        return periods.sortedBy { it.referenceDate }.mapNotNull { period ->
+        return completed.sortedBy { it.referenceDate }.mapNotNull { period ->
             val start = checkNotNull(period.startDate)
             val end = checkNotNull(period.endDate)
             val expected = ChronoUnit.DAYS.between(start, end).toInt() + 1
-            val facts = daily.filter { LocalDate.parse(it["sample_date"].toString()) in start..end }
-                .groupBy { it["code"].toString() to it["fuel_type_code"].toString() }.map { (cell, days) ->
-                    val mean = days.fold(BigDecimal.ZERO) { sum, day -> sum + (day["price_rub_per_liter"] as BigDecimal) }
+            val facts = daily.filter { it.sampleDate in start..end }
+                .groupBy { it.region.code to it.fuelType.code }.map { (cell, days) ->
+                    val mean = days.fold(BigDecimal.ZERO) { sum, day -> sum + day.priceRubPerLiter }
                         .divide(days.size.toBigDecimal(), 6, RoundingMode.HALF_UP)
 
                     RegionalPriceFact(
                         cell.first, cell.second, mean, null,
-                        days.minOf { (it["station_count"] as Number).toInt() }, days.size, expected,
-                        days.maxOf { (it["collected_at"] as Timestamp).toInstant() },
-                        ImportHash.hash(days.sortedBy { it["sample_date"].toString() }.flatMap {
-                            listOf(it["sample_date"], it["content_hash"], it["collected_at"], it["id"])
+                        days.minOf { it.stationCount }, days.size, expected,
+                        days.maxOf { it.collectedAt },
+                        ImportHash.hash(days.sortedBy { it.sampleDate }.flatMap {
+                            // Keep the persisted hash format used before the JPA migration.
+                            listOf(it.sampleDate, it.contentHash, Timestamp.from(it.collectedAt), it.id)
                         })
                     )
                 }

@@ -40,8 +40,5 @@ class PricePeriodEntity(
     var startDate: LocalDate? = null,
 
     @Column(name = "end_date", updatable = false)
-    var endDate: LocalDate? = null,
-
-    @Column(name = "label", length = 128, nullable = false, updatable = false)
-    var label: String
+    var endDate: LocalDate? = null
 )

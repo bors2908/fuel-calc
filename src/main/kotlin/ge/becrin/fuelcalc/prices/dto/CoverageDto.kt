@@ -5,7 +5,6 @@ import ge.becrin.fuelcalc.fuels.dto.FuelTypeRefDto
 import ge.becrin.fuelcalc.prices.PriceFrequency
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import ge.becrin.fuelcalc.sources.PriceSource
-import ge.becrin.fuelcalc.sources.dto.SourceUpdateDto
 import java.time.LocalDate
 
 data class CoverageDto(
@@ -15,8 +14,6 @@ data class CoverageDto(
 
     val frequency: PriceFrequency,
 
-    val hasData: Boolean,
-
     val firstAvailableDate: LocalDate?,
 
     val lastAvailableDate: LocalDate?,
@@ -24,7 +21,5 @@ data class CoverageDto(
     val observationCount: Int,
 
     @get:JsonInclude(JsonInclude.Include.NON_NULL)
-    val latestSource: PriceSource? = null,
-
-    val sourceUpdate: SourceUpdateDto
+    val latestSource: PriceSource? = null
 )

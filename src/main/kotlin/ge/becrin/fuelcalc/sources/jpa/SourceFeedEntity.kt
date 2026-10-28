@@ -60,8 +60,5 @@ class SourceFeedEntity(
     var lastSuccessAt: Instant? = null,
 
     @Column(name = "next_expected_publication_at")
-    var nextExpectedPublicationAt: Instant? = null,
-
-    @Column(name = "update_message", columnDefinition = "text")
-    var updateMessage: String? = null
+    var nextExpectedPublicationAt: Instant? = null
 )

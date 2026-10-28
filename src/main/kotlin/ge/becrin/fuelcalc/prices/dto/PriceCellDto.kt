@@ -1,5 +1,6 @@
 package ge.becrin.fuelcalc.prices.dto
 
+import ge.becrin.fuelcalc.prices.MissingPriceReason
 import ge.becrin.fuelcalc.sources.dto.SourceSummaryDto
 
 sealed interface PriceCellDto {
@@ -11,7 +12,5 @@ sealed interface PriceCellDto {
 
     val source: SourceSummaryDto?
 
-    val freshness: PriceFreshnessDto?
-
-    val missingReason: String?
+    val missingReason: MissingPriceReason?
 }

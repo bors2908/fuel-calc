@@ -5,8 +5,6 @@ import ge.becrin.fuelcalc.prices.dto.PricePeriodDto
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import ge.becrin.fuelcalc.sources.dto.SourceSummaryDto
 import java.math.BigDecimal
-import java.time.Instant
-import java.time.LocalDate
 
 data class PriceRow(
     val id: Long,
@@ -19,21 +17,5 @@ data class PriceRow(
 
     val price: BigDecimal,
 
-    val feedId: Long,
-
-    val source: SourceSummaryDto,
-
-    val publicationDate: LocalDate?,
-
-    val publishedAt: Instant?,
-
-    val loadedAt: Instant,
-
-    val publicationUrl: String?,
-
-    val attribution: String,
-
-    val methodologyUrl: String?,
-
-    val note: String?
+    val source: SourceSummaryDto
 )

@@ -142,9 +142,27 @@ class ApiContractAssertions {
             "boolean" -> if (!value.isBoolean) return "$path: expected boolean"
         }
 
-        for ((field, definition) in schema["properties"] as? Map<String, Map<String, Any?>> ?: emptyMap()) {
+        val properties = schema["properties"] as? Map<String, Map<String, Any?>> ?: emptyMap()
+
+        for ((field, definition) in properties) {
             if (value.has(field)) {
                 mismatch(value.path(field), definition, "$path.$field")?.let { return it }
+            }
+        }
+
+        if (value.isObject) {
+            val additional = schema["additionalProperties"]
+
+            for ((field, child) in value.properties()) {
+                if (field !in properties) {
+                    if (additional == false) {
+                        return "$path: unexpected field $field"
+                    }
+
+                    if (additional is Map<*, *>) {
+                        mismatch(child, additional as Map<String, Any?>, "$path.$field")?.let { return it }
+                    }
+                }
             }
         }
 

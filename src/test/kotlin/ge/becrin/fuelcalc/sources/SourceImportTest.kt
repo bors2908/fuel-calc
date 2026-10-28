@@ -2,6 +2,13 @@ package ge.becrin.fuelcalc.sources
 
 import com.sun.net.httpserver.HttpServer
 import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.jpa.PricePeriodEntity
+import ge.becrin.fuelcalc.prices.jpa.PricePeriodRepository
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyEntity
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyRepository
+import ge.becrin.fuelcalc.prices.jpa.RegionalPriceObservationEntity
+import ge.becrin.fuelcalc.regions.jpa.RegionEntity
+import ge.becrin.fuelcalc.fuels.jpa.FuelTypeEntity
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
@@ -27,7 +34,6 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
-import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import tools.jackson.databind.json.JsonMapper
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.math.BigDecimal
@@ -431,7 +437,8 @@ class SourceImportTest {
                 it.rustata.baseUrl = server.uri.toString()
                 it.rustata.token = "test-token"
             }
-            val adapter = RustataClient(SourceHttpClient(properties, clock), properties, regions, RustataWeekResolver(mock<ImportStore>()))
+            val weekResolver = RustataWeekResolver(mock<PricePeriodRepository>(), mock<RegionalPriceKeyRepository>())
+            val adapter = RustataClient(SourceHttpClient(properties, clock), properties, regions, weekResolver)
             val publication = adapter.fetch(
                 adapter.definition(PriceFrequency.MONTHLY),
                 FetchWindow(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "INCREMENTAL")
@@ -456,7 +463,8 @@ class SourceImportTest {
                 it.rustata.token = "test-token"
                 it.rustata.requestInterval = Duration.ZERO
             }
-            val adapter = RustataClient(SourceHttpClient(properties, clock), properties, regions, RustataWeekResolver(mock<ImportStore>()))
+            val weekResolver = RustataWeekResolver(mock<PricePeriodRepository>(), mock<RegionalPriceKeyRepository>())
+            val adapter = RustataClient(SourceHttpClient(properties, clock), properties, regions, weekResolver)
             val error = assertFailsWith<SourceImportException> {
                 adapter.fetch(adapter.definition(PriceFrequency.MONTHLY), FetchWindow(
                     LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "BACKFILL"
@@ -540,17 +548,40 @@ class SourceImportTest {
             it.rustata.baseUrl = uri.toString()
             it.rustata.token = "test-token"
         }
-        val jdbc = mock<NamedParameterJdbcTemplate>()
-        val store = mock<ImportStore>()
+        val periods = mock<PricePeriodRepository>()
+        val keys = mock<RegionalPriceKeyRepository>()
         val series = JsonMapper.builder().build().readTree(resource("rustata/weekly.json")).path("series").first()
         val catalog = RegionCatalog()
         catalog.replace(listOf(RegionCatalog.Region(series.path("geo").asString(), series.path("geo_label").asString())))
-        whenever(store.jdbc).thenReturn(jdbc)
-        whenever(jdbc.queryForList(any<String>(), any<Map<String, Any>>())).thenAnswer { call ->
-            if (call.getArgument<String>(0).contains("FROM price_periods")) calendar else official
+        val confirmed = calendar.map { row ->
+            PricePeriodEntity(
+                periodKey = "WEEKLY:${row.getValue("reference_date")}",
+                frequency = PriceFrequency.WEEKLY,
+                referenceDate = (row.getValue("reference_date") as Date).toLocalDate(),
+                startDate = (row.getValue("start_date") as Date).toLocalDate(),
+                endDate = (row.getValue("end_date") as Date).toLocalDate()
+            )
+        }
+        val prices = official.map { row ->
+            val period = confirmed.single { it.referenceDate == (row.getValue("reference_date") as Date).toLocalDate() }
+            val key = mock<RegionalPriceKeyEntity>()
+            val observation = mock<RegionalPriceObservationEntity>()
+
+            whenever(key.period).thenReturn(period)
+            whenever(key.region).thenReturn(RegionEntity(code = row.getValue("region_code").toString(), name = "Test", createdAt = now))
+            whenever(key.fuelType).thenReturn(
+                FuelTypeEntity(code = row.getValue("fuel_type_code").toString(), name = "Test", sortOrder = 1)
+            )
+            whenever(key.currentObservation).thenReturn(observation)
+            whenever(observation.priceRubPerLiter).thenReturn(row.getValue("price") as BigDecimal)
+
+            key
         }
 
-        return RustataClient(SourceHttpClient(properties, clock), properties, catalog, RustataWeekResolver(store))
+        whenever(periods.findOfficialWeeks(any(), any())).thenReturn(confirmed)
+        whenever(keys.findOfficialAtDates(any())).thenReturn(prices)
+
+        return RustataClient(SourceHttpClient(properties, clock), properties, catalog, RustataWeekResolver(periods, keys))
     }
 
     private fun properties(): ImportProperties =

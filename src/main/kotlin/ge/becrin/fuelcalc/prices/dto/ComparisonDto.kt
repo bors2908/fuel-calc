@@ -2,11 +2,10 @@ package ge.becrin.fuelcalc.prices.dto
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import ge.becrin.fuelcalc.api.SortOrder
-import ge.becrin.fuelcalc.prices.ComparisonReason
 import ge.becrin.fuelcalc.prices.ComparisonSortBy
 import ge.becrin.fuelcalc.prices.ComparisonStatus
 
-data class ComparisonDto(
+data class ComparisonDto<T>(
     val status: ComparisonStatus,
 
     val snapshotId: String?,
@@ -18,13 +17,9 @@ data class ComparisonDto(
 
     val sortOrder: SortOrder,
 
-    val data: List<ComparisonRowDto>,
+    val data: List<T>,
 
     val allPricesEqual: Boolean?,
 
-    val hasNewerObservations: Boolean,
-
-    val reason: ComparisonReason?,
-
-    val message: String?
+    val hasNewerObservations: Boolean
 )
