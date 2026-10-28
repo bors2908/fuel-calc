@@ -1,0 +1,102 @@
+package ge.becrin.fuelcalc.prices.service
+
+import ge.becrin.fuelcalc.api.SortOrder
+import ge.becrin.fuelcalc.prices.ComparisonReason
+import ge.becrin.fuelcalc.prices.ComparisonSortBy
+import ge.becrin.fuelcalc.prices.ComparisonStatus
+import ge.becrin.fuelcalc.prices.dto.ComparisonDto
+import ge.becrin.fuelcalc.prices.dto.ComparisonRowDto
+import ge.becrin.fuelcalc.prices.dto.ComparisonSummaryDto
+import ge.becrin.fuelcalc.prices.model.ComparisonSnapshot
+import ge.becrin.fuelcalc.regions.dto.RegionRefDto
+import org.springframework.stereotype.Component
+
+@Component
+class ComparisonConverter(private val cells: PriceCellConverter) {
+    fun toDto(
+        snapshot: ComparisonSnapshot,
+        context: PriceReadContextFactory.ReadContext,
+        sortBy: ComparisonSortBy = ComparisonSortBy.PRICE,
+        sortOrder: SortOrder = SortOrder.ASC
+    ): ComparisonDto {
+        val comparable = snapshot.status == ComparisonStatus.AVAILABLE
+        val unavailable = snapshot.status == ComparisonStatus.NO_DATA || snapshot.status == ComparisonStatus.NO_COMMON_PERIOD
+        val actualSort = if (unavailable && sortBy == ComparisonSortBy.PRICE) ComparisonSortBy.REGION_NAME else sortBy
+        val actualOrder = if (unavailable && sortBy == ComparisonSortBy.PRICE) SortOrder.ASC else sortOrder
+        val rows = snapshot.rows.associateBy { it.region.code }
+        val minimum = snapshot.rows.minOfOrNull { it.price }
+        val maximum = snapshot.rows.maxOfOrNull { it.price }
+        val equal = comparable && minimum?.compareTo(maximum) == 0
+        val base = rows[snapshot.selection.base.code]
+        val primary =
+            if (actualSort == ComparisonSortBy.PRICE) compareBy<RegionRefDto> { rows.getValue(it.code).price }
+            else compareBy { it.name }
+        val directed = if (actualOrder == SortOrder.DESC) primary.reversed() else primary
+        val sorted = snapshot.selection.regions.sortedWith(directed.thenBy { it.name }.thenBy { it.code })
+        val data = sorted.map { region ->
+            val row = rows[region.code]
+            val isBase = region.code == snapshot.selection.base.code
+            val price = row?.let { cells.available(it, context.bounds[region.code]?.last, context.updates) } ?: cells.missing()
+
+            ComparisonRowDto(
+                region,
+                isBase,
+                price,
+                if (comparable && !isBase) checkNotNull(row).price.subtract(checkNotNull(base).price).toPlainString() else null,
+                comparable && !equal && row?.price?.compareTo(minimum) == 0,
+                comparable && !equal && row?.price?.compareTo(maximum) == 0
+            )
+        }
+
+        return ComparisonDto(
+            snapshot.status,
+            snapshot.snapshotId,
+            snapshot.period,
+            actualSort,
+            actualOrder,
+            data,
+            if (comparable) equal else null,
+            snapshot.hasNewerObservations,
+            reason(snapshot.status),
+            message(snapshot.status)
+        )
+    }
+
+    fun summary(snapshot: ComparisonSnapshot): ComparisonSummaryDto {
+        val available = snapshot.status == ComparisonStatus.AVAILABLE
+        val base = snapshot.rows.singleOrNull { it.region.code == snapshot.selection.base.code }
+        val minimum = if (available) snapshot.rows.minOf { it.price } else null
+        val lowest =
+            if (available) snapshot.rows.filter { it.price.compareTo(minimum) == 0 }.map { it.region }.sortedBy { it.code }
+            else emptyList()
+
+        return ComparisonSummaryDto(
+            snapshot.status,
+            snapshot.snapshotId,
+            snapshot.period,
+            if (available || snapshot.status == ComparisonStatus.SINGLE_REGION) base?.price?.toPlainString() else null,
+            minimum?.toPlainString(),
+            lowest,
+            minimum?.subtract(checkNotNull(base).price)?.toPlainString(),
+            snapshot.hasNewerObservations,
+            reason(snapshot.status),
+            message(snapshot.status)
+        )
+    }
+
+    private fun reason(status: ComparisonStatus): ComparisonReason? =
+        when (status) {
+            ComparisonStatus.AVAILABLE -> null
+            ComparisonStatus.SINGLE_REGION -> ComparisonReason.ADD_REGIONS_TO_COMPARE
+            ComparisonStatus.NO_COMMON_PERIOD -> ComparisonReason.NO_COMMON_PERIOD
+            ComparisonStatus.NO_DATA -> ComparisonReason.NO_DATA_IN_RANGE
+        }
+
+    private fun message(status: ComparisonStatus): String? =
+        when (status) {
+            ComparisonStatus.AVAILABLE -> null
+            ComparisonStatus.SINGLE_REGION -> "Добавьте регионы для сравнения"
+            ComparisonStatus.NO_COMMON_PERIOD -> "В выбранном диапазоне нет общего периода для всех регионов"
+            ComparisonStatus.NO_DATA -> "В выбранном диапазоне нет наблюдений"
+        }
+}

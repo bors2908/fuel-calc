@@ -41,6 +41,7 @@ commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "common
 apache-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "apache-poi" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
+snake-yaml = { module = "org.yaml:snakeyaml" }
 
 [bundles]
 backend = [
@@ -63,4 +64,5 @@ testing = [
   "mockito-kotlin",
   "testcontainers-junit-jupiter",
   "testcontainers-postgresql",
+  "snake-yaml",
 ]

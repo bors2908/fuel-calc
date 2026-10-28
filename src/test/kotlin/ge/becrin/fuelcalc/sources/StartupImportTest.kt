@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.context.annotation.Import
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor
 import org.springframework.scheduling.config.CronTask
@@ -42,6 +43,7 @@ import kotlin.test.assertEquals
     ]
 )
 @Testcontainers
+@Import(SourceTestClockConfiguration::class)
 class StartupImportTest {
     @Autowired
     private lateinit var jdbc: JdbcTemplate

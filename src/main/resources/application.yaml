@@ -55,7 +55,7 @@ imports:
     cron: "${RUSTATA_CRON:0 30 */6 * * *}"
     monthly-interval: PT24H
     base-url: https://rustata.ru
-    token: ${RUSTATA_TOKEN:}
+    token: ${RUSTATA_TOKEN:rst_N9ZiHb3T2srbEG9PMxIAziO0x2FJyhZTAG2txeTkdyc}
     request-interval: PT6S
     page-size: 300
     max-pages: 10
