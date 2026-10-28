@@ -51,7 +51,7 @@ imports:
     monthly-catalog: https://rosstat.gov.ru/statistics/price
   rustata:
     enabled: ${RUSTATA_ENABLED:true}
-    fetch-on-startup: ${RUSTATA_FETCH_ON_STARTUP:false}
+    fetch-on-startup: ${RUSTATA_FETCH_ON_STARTUP:true}
     cron: "${RUSTATA_CRON:0 30 */6 * * *}"
     monthly-interval: PT24H
     base-url: https://rustata.ru
@@ -60,8 +60,8 @@ imports:
     page-size: 300
     max-pages: 10
   wherefuel:
-    enabled: ${WHEREFUEL_ENABLED:true}
-    fetch-on-startup: ${WHEREFUEL_FETCH_ON_STARTUP:true}
+    enabled: ${WHEREFUEL_ENABLED:false}
+    fetch-on-startup: ${WHEREFUEL_FETCH_ON_STARTUP:false}
     cron: "${WHEREFUEL_CRON:0 45 * * * *}"
     base-url: https://wherefuel.ru
     api-key: ${WHEREFUEL_API_KEY:}
