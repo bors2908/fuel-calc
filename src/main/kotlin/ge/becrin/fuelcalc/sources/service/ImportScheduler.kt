@@ -1,7 +1,7 @@
 package ge.becrin.fuelcalc.sources.service
 
-import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
+import ge.becrin.fuelcalc.sources.config.ImportProperties
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
@@ -9,19 +9,14 @@ import org.springframework.scheduling.TaskScheduler
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Clock
-import java.time.Instant
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 
 @Component
 class ImportScheduler(
-    private val regional: RegionalImportService,
+    private val official: OfficialImportService,
 
-    private val benzup: BenzupImportService,
+    private val market: BenzupImportService,
 
-    private val catalogService: RegionCatalogService,
-
-    private val catalog: RegionCatalog,
+    private val regions: RegionCatalogService,
 
     private val scheduler: TaskScheduler,
 
@@ -29,111 +24,38 @@ class ImportScheduler(
 
     private val clock: Clock
 ) {
-    private val rosstatLock = ReentrantLock()
-
-    private var lastCatalogAttempt: Instant? = null
-
     @EventListener(ApplicationReadyEvent::class)
     fun onReady() {
         if (!properties.enabled) {
             return
         }
 
-        regional.initialize()
-        benzup.initialize()
-        catalogService.restore()
-
-        val rosstatAtStartup = properties.rosstat.enabled && properties.rosstat.fetchOnStartup
-        val rustataAtStartup = properties.rustata.enabled && properties.rustata.fetchOnStartup
-        val benzupAtStartup = properties.benzup.enabled && properties.benzup.fetchOnStartup
-
-        if (!properties.fetchOnStartup || !rosstatAtStartup && !rustataAtStartup && !benzupAtStartup) {
-            return
-        }
-
+        regions.restore()
         scheduler.schedule({
             safely {
-                if (rosstatAtStartup) {
-                    fetchRosstat(true)
-                }
+                regions.refresh()
 
-                if ((rustataAtStartup || benzupAtStartup) && catalogAvailable("DEPENDENT_SOURCES")) {
-                    if (rustataAtStartup) {
-                        scheduler.schedule({ safely { fetchRustata(true) } }, clock.instant())
-                    }
-
-                    if (benzupAtStartup) {
-                        scheduler.schedule({ benzup() }, clock.instant())
-                    }
+                if (properties.fetchOnStartup) {
+                    scheduler.schedule({ official() }, clock.instant())
+                    scheduler.schedule({ market() }, clock.instant())
                 }
             }
         }, clock.instant())
     }
 
-    @Scheduled(
-        cron = "\${imports.rosstat.cron:0 0 */6 * * *}",
-        zone = "\${imports.time-zone:Europe/Moscow}"
-    )
-    fun rosstat() {
-        safely { fetchRosstat() }
+    @Scheduled(cron = "\${imports.regions.cron:0 0 3 * * MON}", zone = "\${imports.time-zone:Europe/Moscow}")
+    fun regions() {
+        safely { regions.refresh() }
     }
 
-    @Scheduled(
-        cron = "\${imports.rustata.cron:0 30 */6 * * *}",
-        zone = "\${imports.time-zone:Europe/Moscow}"
-    )
-    fun rustata() {
-        safely { fetchRustata() }
+    @Scheduled(cron = "\${imports.rosstat.cron:0 0 0 * * *}", zone = "\${imports.time-zone:Europe/Moscow}")
+    fun official() {
+        safely { official.fetch() }
     }
 
-    @Scheduled(
-        cron = "\${imports.benzup.cron:0 15 0,6,12,18 * * *}",
-        zone = "\${imports.time-zone:Europe/Moscow}"
-    )
-    fun benzup() {
-        safely {
-            if (properties.benzup.enabled && catalogAvailable("BENZUP")) {
-                benzup.fetch()
-            }
-        }
-    }
-
-    private fun fetchRosstat(forceMonthly: Boolean = false) {
-        if (!properties.rosstat.enabled) {
-            return
-        }
-
-        rosstatLock.withLock {
-            val now = clock.instant()
-
-            if (forceMonthly || !catalog.isReady ||
-                lastCatalogAttempt?.plus(properties.rosstat.monthlyInterval)?.isAfter(now) != true
-            ) {
-                lastCatalogAttempt = now
-
-                catalogService.refresh()
-            }
-
-            if (catalogAvailable("ROSSTAT")) {
-                regional.fetch("ROSSTAT", forceMonthly)
-            }
-        }
-    }
-
-    private fun fetchRustata(forceMonthly: Boolean = false) {
-        if (properties.rustata.enabled && catalogAvailable("RUSTATA")) {
-            regional.fetch("RUSTATA", forceMonthly)
-        }
-    }
-
-    private fun catalogAvailable(provider: String): Boolean {
-        val ready = rosstatLock.withLock { catalog.isReady }
-
-        if (!ready) {
-            log.warn("Source import postponed [provider={}, reason=REGION_CATALOG_UNAVAILABLE]", provider)
-        }
-
-        return ready
+    @Scheduled(cron = "\${imports.benzup.cron:0 0 12 * * *}", zone = "\${imports.time-zone:Europe/Moscow}")
+    fun market() {
+        safely { market.fetch() }
     }
 
     private fun safely(action: () -> Unit) {
@@ -141,7 +63,7 @@ class ImportScheduler(
             try {
                 action()
             } catch (error: Exception) {
-                log.error("Scheduled import failed [errorType={}, message={}]", error.javaClass.simpleName, error.message, error)
+                log.error("Scheduled import failed", error)
             }
         }
     }

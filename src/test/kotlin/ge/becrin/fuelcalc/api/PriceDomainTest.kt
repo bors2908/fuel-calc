@@ -7,22 +7,16 @@ import ge.becrin.fuelcalc.prices.dto.PricePeriodDto
 import ge.becrin.fuelcalc.prices.model.PriceRow
 import ge.becrin.fuelcalc.prices.model.PriceSelection
 import ge.becrin.fuelcalc.prices.service.PriceIdentityFactory
-import ge.becrin.fuelcalc.prices.service.SourceFallbackPolicy
 import ge.becrin.fuelcalc.refueling.service.RefuelingCalculator
 import ge.becrin.fuelcalc.regions.dto.RegionRefDto
-import ge.becrin.fuelcalc.sources.PriceAggregationMethod
 import ge.becrin.fuelcalc.sources.PriceSource
-import ge.becrin.fuelcalc.sources.dto.SourceLabelDto
-import ge.becrin.fuelcalc.sources.dto.SourceSummaryDto
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 
 class PriceDomainTest {
-    private val policy = SourceFallbackPolicy()
-
-    private val identity = PriceIdentityFactory(policy)
+    private val identity = PriceIdentityFactory()
 
     private val first = RegionRefDto("A", "Регион А")
 
@@ -37,15 +31,8 @@ class PriceDomainTest {
         date.minusMonths(1),
         date,
         PriceFrequency.WEEKLY,
-        PriceSource.ROSSTAT
+        PriceSource.OFFICIAL
     )
-
-    @Test
-    fun testFallbackOrdersCoverThreeIndependentChannels() {
-        assertEquals(listOf(PriceSource.ROSSTAT, PriceSource.RUSTATA, PriceSource.BENZUP), policy.order(PriceSource.ROSSTAT))
-        assertEquals(listOf(PriceSource.RUSTATA, PriceSource.ROSSTAT, PriceSource.BENZUP), policy.order(PriceSource.RUSTATA))
-        assertEquals(listOf(PriceSource.BENZUP, PriceSource.RUSTATA, PriceSource.ROSSTAT), policy.order(PriceSource.BENZUP))
-    }
 
     @Test
     fun testIdentitiesDependOnCanonicalSelectionAndImmutableObservationIds() {
@@ -55,7 +42,7 @@ class PriceDomainTest {
         assertEquals(identity.context(selection).key, identity.context(reordered).key)
         assertEquals(identity.snapshot(selection, rows), identity.snapshot(reordered, rows.reversed()))
         assertNotEquals(identity.context(selection).key, identity.context(selection.copy(base = second)).key)
-        assertNotEquals(identity.snapshot(selection, rows), identity.snapshot(selection.copy(preferred = PriceSource.RUSTATA), rows))
+        assertNotEquals(identity.snapshot(selection, rows), identity.snapshot(selection.copy(source = PriceSource.MARKET), rows))
         assertNotEquals(identity.snapshot(selection, rows), identity.snapshot(selection, listOf(rows.first().copy(id = 3), rows.last())))
     }
 
@@ -92,15 +79,13 @@ class PriceDomainTest {
         id: Long,
         region: RegionRefDto
     ): PriceRow {
-        val source = SourceLabelDto("ROSSTAT", "Росстат")
-
         return PriceRow(
             id,
             region,
             selection.fuel,
             PricePeriodDto("WEEKLY:$date", PriceFrequency.WEEKLY, date, date.toString(), date.minusDays(6), date),
             "72.50".toBigDecimal(),
-            SourceSummaryDto(source, "ROSSTAT_WEEKLY", PriceAggregationMethod.OFFICIAL_STATISTICS)
+            PriceSource.OFFICIAL
         )
     }
 }

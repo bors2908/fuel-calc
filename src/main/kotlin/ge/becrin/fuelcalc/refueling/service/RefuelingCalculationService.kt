@@ -1,19 +1,23 @@
 package ge.becrin.fuelcalc.refueling.service
 
-import ge.becrin.fuelcalc.api.dto.ErrorDetailDto
 import ge.becrin.fuelcalc.api.error.ApiException
 import ge.becrin.fuelcalc.archive.service.ArchiveReadService
 import ge.becrin.fuelcalc.prices.ComparisonStatus
+import ge.becrin.fuelcalc.prices.dto.PriceSelectionDto
 import ge.becrin.fuelcalc.prices.service.ComparisonConverter
 import ge.becrin.fuelcalc.prices.service.ComparisonResolver
-import ge.becrin.fuelcalc.prices.service.PriceReadContextFactory
 import ge.becrin.fuelcalc.prices.service.PriceCellConverter
+import ge.becrin.fuelcalc.prices.service.PriceReadContextFactory
 import ge.becrin.fuelcalc.refueling.RefuelingRelation
 import ge.becrin.fuelcalc.refueling.dto.RefuelingCalculateRequestDto
 import ge.becrin.fuelcalc.refueling.dto.RefuelingCalculationDto
 import ge.becrin.fuelcalc.refueling.dto.RefuelingRowDto
+import ge.becrin.fuelcalc.refueling.dto.RefuelingSourceCalculationDto
+import ge.becrin.fuelcalc.sources.PriceSource
+import ge.becrin.fuelcalc.sources.service.SourceUpdateReader
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
+import java.time.LocalDate
 
 @Service
 class RefuelingCalculationService(
@@ -27,69 +31,86 @@ class RefuelingCalculationService(
 
     private val cells: PriceCellConverter,
 
-    private val calculator: RefuelingCalculator
+    private val calculator: RefuelingCalculator,
+
+    private val updates: SourceUpdateReader
 ) {
     fun calculate(input: RefuelingCalculateRequestDto): RefuelingCalculationDto =
         archive.read { meta ->
             val volume = volume(input.volumeLiters)
 
-            if (input.expectedSnapshotId != null && input.expectedSnapshotId.length !in 1..128) {
-                throw ApiException.invalid("expectedSnapshotId", "INVALID_FORMAT", "Неверная длина ID среза")
+            if (input.selection.date > meta.serverDate) {
+                throw ApiException.invalid("selection.date", "FUTURE_DATE", "Дата не должна быть в будущем")
             }
 
-            val context = contexts.selection(input.selection, meta.serverDate)
-            val snapshot = resolver.resolve(context.selection)
-
-            if (snapshot.status != ComparisonStatus.AVAILABLE && snapshot.status != ComparisonStatus.SINGLE_REGION) {
-                val code = if (context.selection.regions.size == 1) "NO_PRICE_IN_RANGE" else "NO_COMMON_PERIOD"
-
-                throw ApiException(
-                    422,
-                    "CalculationUnavailable",
-                    "Нет сопоставимых цен для расчёта",
-                    listOf(
-                        ErrorDetailDto(null, code, "Выберите другой период или состав регионов")
-                    )
-                )
+            for ((source, id) in input.expectedSnapshotIds) {
+                if (id.length !in 1..128) {
+                    throw ApiException.invalid("expectedSnapshotIds.$source", "INVALID_FORMAT", "Неверная длина ID среза")
+                }
             }
 
-            val totals = calculator.totals(volume, snapshot.rows.associate { it.region.code to it.price })
-            val base = totals.getValue(context.selection.base.code)
-            val comparison = comparisons.convert(snapshot) { row ->
-                val total = totals.getValue(row.region.code)
-                val difference = total.subtract(base)
-                val relation =
-                    when {
-                        row.isBase -> RefuelingRelation.BASE
-                        difference.signum() < 0 -> RefuelingRelation.LOWER
-                        difference.signum() > 0 -> RefuelingRelation.HIGHER
-                        else -> RefuelingRelation.EQUAL
-                    }
+            val results = PriceSource.entries.map { source -> calculateSource(input, volume, source, meta.serverDate) }
 
-                RefuelingRowDto(
-                    region = row.region,
-                    price = cells.available(checkNotNull(row.price)),
-                    latestAvailableDate = context.bounds[row.region.code]?.last,
-                    differenceRubPerLiter = row.difference?.toPlainString(),
-                    isLowest = row.isLowest,
-                    isHighest = row.isHighest,
-                    totalRub = total.toPlainString(),
-                    differenceRub = difference.toPlainString(),
-                    relation = relation
-                )
-            }
+            RefuelingCalculationDto(meta, volume.setScale(2).toPlainString(), "RUB", results, updates.read())
+        }
 
-            RefuelingCalculationDto(
-                meta,
-                context.dto,
-                volume.setScale(2).toPlainString(),
-                "RUB",
-                base.toPlainString(),
-                input.expectedSnapshotId?.let { it != snapshot.snapshotId },
-                comparison,
-                context.updates
+    private fun calculateSource(
+        input: RefuelingCalculateRequestDto,
+        volume: BigDecimal,
+        source: PriceSource,
+        serverDate: LocalDate
+    ): RefuelingSourceCalculationDto {
+        val context = contexts.selection(selection(input, source), serverDate)
+        val first = context.bounds.values.minOfOrNull { it.first } ?: input.selection.date
+        val snapshot = resolver.resolve(context.selection.copy(from = minOf(first, input.selection.date)))
+        val changed = input.expectedSnapshotIds[source]?.let { it != snapshot.snapshotId }
+
+        if (snapshot.status != ComparisonStatus.AVAILABLE && snapshot.status != ComparisonStatus.SINGLE_REGION) {
+            return RefuelingSourceCalculationDto(context.dto, snapshot.status, null, changed, null)
+        }
+
+        val totals = calculator.totals(volume, snapshot.rows.associate { it.region.okatoCode to it.price })
+        val base = totals.getValue(context.selection.base.okatoCode)
+        val comparison = comparisons.convert(snapshot) { row ->
+            val total = totals.getValue(row.region.okatoCode)
+            val difference = total.subtract(base)
+            val relation =
+                when {
+                    row.isBase -> RefuelingRelation.BASE
+                    difference.signum() < 0 -> RefuelingRelation.LOWER
+                    difference.signum() > 0 -> RefuelingRelation.HIGHER
+                    else -> RefuelingRelation.EQUAL
+                }
+
+            RefuelingRowDto(
+                region = row.region,
+                price = cells.available(checkNotNull(row.price)),
+                latestAvailableDate = context.bounds[row.region.okatoCode]?.last,
+                differenceRubPerLiter = row.difference?.toPlainString(),
+                isLowest = row.isLowest,
+                isHighest = row.isHighest,
+                totalRub = total.toPlainString(),
+                differenceRub = difference.toPlainString(),
+                relation = relation
             )
         }
+
+        return RefuelingSourceCalculationDto(context.dto, snapshot.status, base.toPlainString(), changed, comparison)
+    }
+
+    private fun selection(
+        input: RefuelingCalculateRequestDto,
+        source: PriceSource
+    ): PriceSelectionDto =
+        PriceSelectionDto(
+            input.selection.baseRegionCode,
+            input.selection.regionCodes,
+            input.selection.fuelType,
+            input.selection.date,
+            input.selection.date,
+            source.frequency,
+            source
+        )
 
     private fun volume(value: String): BigDecimal {
         if (value.length > 10 || !VOLUME.matches(value)) {

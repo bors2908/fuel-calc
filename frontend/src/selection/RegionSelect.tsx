@@ -1,3 +1,4 @@
+import { regionName } from "../regions/regionName";
 import { useEffect, useId, useRef, useState } from "react";
 import type { Catalog } from "./model";
 
@@ -13,11 +14,11 @@ export function RegionSelect({ regions, value, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [activeCode, setActiveCode] = useState("");
-  const selected = regions.find((region) => region.code === value);
+  const selected = regions.find((region) => region.okatoCode === value);
   const matches = regions.filter((region) =>
-    region.name.toLocaleLowerCase("ru").includes(search.trim().toLocaleLowerCase("ru")),
+    regionName(region).toLocaleLowerCase("ru").includes(search.trim().toLocaleLowerCase("ru")),
   );
-  const active = matches.find((region) => region.code === activeCode);
+  const active = matches.find((region) => region.okatoCode === activeCode);
 
   useEffect(() => {
     if (open && activeCode) {
@@ -49,11 +50,11 @@ export function RegionSelect({ regions, value, onChange }: Props) {
         aria-autocomplete="list"
         aria-expanded={open}
         aria-controls={open ? `${id}-list` : undefined}
-        aria-activedescendant={open && active ? `${id}-${active.code}` : undefined}
+        aria-activedescendant={open && active ? `${id}-${active.okatoCode}` : undefined}
         aria-required="true"
         autoComplete="off"
         placeholder={open ? "Введите название региона" : "Выберите регион"}
-        value={open ? search : (selected?.name ?? "")}
+        value={open ? search : selected ? regionName(selected) : ""}
         onFocus={expand}
         onClick={expand}
         onBlur={() => setOpen(false)}
@@ -72,19 +73,19 @@ export function RegionSelect({ regions, value, onChange }: Props) {
               expand();
               return;
             }
-            const index = matches.findIndex((region) => region.code === activeCode);
+            const index = matches.findIndex((region) => region.okatoCode === activeCode);
             const next =
               event.key === "ArrowDown"
                 ? Math.min(index + 1, matches.length - 1)
                 : index < 0
                   ? matches.length - 1
                   : Math.max(0, index - 1);
-            setActiveCode(matches[next]?.code ?? "");
+            setActiveCode(matches[next]?.okatoCode ?? "");
           } else if (event.key === "Enter" && open) {
             event.preventDefault();
             const choice = active ?? (matches.length === 1 ? matches[0] : undefined);
             if (choice) {
-              select(choice.code);
+              select(choice.okatoCode);
             }
           } else if (event.key === "Escape" && open) {
             event.preventDefault();
@@ -102,16 +103,16 @@ export function RegionSelect({ regions, value, onChange }: Props) {
           >
             {matches.map((region) => (
               <li
-                id={`${id}-${region.code}`}
-                key={region.code}
+                id={`${id}-${region.okatoCode}`}
+                key={region.okatoCode}
                 role="option"
-                aria-selected={region.code === value}
-                data-active={region.code === activeCode}
+                aria-selected={region.okatoCode === value}
+                data-active={region.okatoCode === activeCode}
                 onPointerDown={(event) => event.preventDefault()}
-                onClick={() => select(region.code)}
+                onClick={() => select(region.okatoCode)}
               >
-                <span>{region.name}</span>
-                {region.code === value && <span aria-hidden="true">✓</span>}
+                <span>{regionName(region)}</span>
+                {region.okatoCode === value && <span aria-hidden="true">✓</span>}
               </li>
             ))}
           </ul>

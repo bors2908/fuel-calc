@@ -44,12 +44,7 @@ class PriceReadContextFactory(
         prepare(validator.resolve(input, date))
 
     private fun prepare(selection: PriceSelection): ReadContext {
-        val bounds = query.bounds(
-            selection.regions.map { it.code },
-            listOf(selection.fuel.code),
-            listOf(selection.frequency),
-            selection.preferred
-        ).associateBy { it.regionCode }
+        val bounds = query.bounds(selection).associateBy { it.regionCode }
 
         return ReadContext(selection, identity.context(selection), bounds, states.read(listOf(selection.frequency)))
     }

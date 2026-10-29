@@ -7,25 +7,9 @@ import java.time.LocalDate
 data class PriceObservationDetails(
     val price: PriceRow,
 
-    val publisher: SourceRefDto,
-
-    val providerUrl: String?,
-
-    val datasetId: String,
-
-    val publicationId: String?,
+    val provider: SourceRefDto,
 
     val publicationDate: LocalDate?,
 
-    val publishedAt: Instant?,
-
-    val loadedAt: Instant,
-
-    val publicationUrl: String?,
-
-    val attribution: String,
-
-    val methodologyUrl: String?,
-
-    val note: String?
+    val loadedAt: Instant
 )

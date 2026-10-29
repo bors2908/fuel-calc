@@ -5,11 +5,18 @@ import org.slf4j.LoggerFactory
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.util.LinkedMultiValueMap
+import org.springframework.web.reactive.function.BodyInserters
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.json.JsonMapper
 import org.springframework.http.client.reactive.JdkClientHttpConnector
 import org.springframework.stereotype.Component
 import org.springframework.web.reactive.function.client.WebClient
 import reactor.core.publisher.Flux
 import java.net.URI
+import java.net.CookieManager
+import java.net.CookiePolicy
 import java.net.http.HttpClient
 import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpTimeoutException
@@ -50,10 +57,13 @@ class SourceHttpClient(
         }
     }
 
+    private val cookies = CookieManager(null, CookiePolicy.ACCEPT_ORIGINAL_SERVER)
+
     private val client = createClient(HttpClient.newBuilder())
 
     private val rosstatHosts = setOf(
-        URI.create(properties.rosstat.weeklyCatalog).host, URI.create(properties.rosstat.monthlyCatalog).host
+        URI.create(properties.rosstat.baseUrl).host, URI.create(properties.regions.okatoEndpoint).host,
+        URI.create(properties.regions.selectionEndpoint).host
     )
 
     private val rosstatClient by lazy {
@@ -76,6 +86,7 @@ class SourceHttpClient(
         uri: URI,
         headers: Map<String, String> = emptyMap(),
         beforeAttempt: () -> Unit = {},
+        form: Map<String, String>? = null,
         reader: (Path) -> T
     ): T {
         val path = Files.createTempFile("fuel-calc-source-", ".download")
@@ -90,7 +101,7 @@ class SourceHttpClient(
                 beforeAttempt()
 
                 try {
-                    download(uri, headers, path)
+                    download(uri, headers, path, form)
 
                     break
                 } catch (error: SourceImportException) {
@@ -138,10 +149,17 @@ class SourceHttpClient(
         }
     }
 
+    fun json(
+        uri: URI,
+        form: Map<String, String>? = null
+    ): JsonNode =
+        read(uri, form = form) { JsonMapper.builder().build().readTree(it.toFile()) }
+
     private fun download(
         uri: URI,
         headers: Map<String, String>,
-        path: Path
+        path: Path,
+        form: Map<String, String>?
     ) {
         require(uri.scheme in setOf("https", "http"))
         val size = AtomicLong()
@@ -151,7 +169,24 @@ class SourceHttpClient(
 
         log.debug("Source HTTP request started [host={}, path={}]", uri.host, uri.path)
 
-        val buffers = selectedClient.get().uri(uri).headers { h -> headers.forEach { (key, value) -> h.set(key, value) } }
+        val request =
+            if (form == null) {
+                selectedClient.get().uri(uri).headers { h -> headers.forEach { (key, value) -> h.set(key, value) } }
+            } else {
+                val values = LinkedMultiValueMap<String, String>()
+
+                form.forEach { (key, value) -> values.add(key, value) }
+
+                selectedClient.post().uri(uri).headers { h ->
+                    headers.forEach { (key, value) -> h.set(key, value) }
+                    h.set(HttpHeaders.REFERER, uri.toString())
+                    cookies.cookieStore.get(uri).singleOrNull { it.name == "csrftoken" }?.let { cookie ->
+                        h.set("X-CSRFToken", cookie.value)
+                    }
+                }
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED).body(BodyInserters.fromFormData(values))
+            }
+        val buffers = request
             .exchangeToFlux { response ->
                 val status = response.statusCode().value()
 
@@ -210,7 +245,7 @@ class SourceHttpClient(
     private fun createClient(builder: HttpClient.Builder): WebClient =
         WebClient.builder()
             .clientConnector(JdkClientHttpConnector(
-                builder.connectTimeout(properties.connectTimeout).version(HttpClient.Version.HTTP_1_1).build()
+                builder.cookieHandler(cookies).connectTimeout(properties.connectTimeout).version(HttpClient.Version.HTTP_1_1).build()
             ))
             .defaultHeader(HttpHeaders.USER_AGENT, "fuel-calc/0.1 (regional price research)")
             .build()

@@ -10,7 +10,6 @@ dependencies {
     implementation(platform(libs.spring.boot.bom))
     implementation(platform(libs.kotlin.bom))
     implementation(libs.bundles.backend)
-    implementation(libs.bundles.data.parsers)
 
     runtimeOnly(libs.postgresql)
 

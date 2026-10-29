@@ -1,25 +1,18 @@
 package ge.becrin.fuelcalc.sources.rustata
 
-import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.fuels.FuelType
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.model.FeedDefinition
 import ge.becrin.fuelcalc.sources.model.FetchWindow
-import ge.becrin.fuelcalc.sources.model.PreparedPublication
-import ge.becrin.fuelcalc.sources.model.PricePeriod
-import ge.becrin.fuelcalc.sources.model.RegionalPriceFact
+import ge.becrin.fuelcalc.sources.model.FetchedPrice
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
-import ge.becrin.fuelcalc.sources.service.RegionalSourceAdapter
 import ge.becrin.fuelcalc.sources.service.SourceHttpClient
 import ge.becrin.fuelcalc.sources.service.SourceImportException
-import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.util.UriComponentsBuilder
-import tools.jackson.databind.DeserializationFeature
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.time.Duration
 import java.time.LocalDate
-import java.time.YearMonth
 
 @Component
 class RustataClient(
@@ -27,147 +20,88 @@ class RustataClient(
 
     private val properties: ImportProperties,
 
-    private val regions: RegionCatalog,
-
-    private val weeks: RustataWeekResolver
-) : RegionalSourceAdapter {
-    override val provider: String = "RUSTATA"
-
-    override val enabled: Boolean
-        get() = properties.rustata.enabled
-
-    private val json = JsonMapper.builder().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS).build()
+    private val regions: RegionCatalog
+) {
+    private val json = JsonMapper.builder().build()
 
     private var lastRequestNanos: Long = 0
 
-    override fun beginRun() {
-        http.beginRun()
-    }
-
-    override fun definition(frequency: PriceFrequency): FeedDefinition =
-        FeedDefinition("RUSTATA_${frequency}_V1", provider, "ROSSTAT", frequency, dataset(frequency))
-
-    override fun fetch(
-        feed: FeedDefinition,
-        window: FetchWindow
-    ): List<PreparedPublication> {
+    fun fetch(window: FetchWindow): List<FetchedPrice> {
         if (properties.rustata.token.isBlank()) {
-            throw SourceImportException("TOKEN_REQUIRED", "Configure RUSTATA_TOKEN to enable authenticated data access")
+            throw SourceImportException("TOKEN_REQUIRED", "Configure RUSTATA_TOKEN for the official fallback")
         }
 
-        val factsByDate = mutableMapOf<LocalDate, MutableList<RegionalPriceFact>>()
+        val fuels = FuelType.entries.associateBy { it.rosstatCode }
+        val facts = mutableListOf<FetchedPrice>()
         val seenSeries = mutableSetOf<String>()
         var offset = 0
         var total: Int? = null
-        var complete = false
 
         for (page in 1..properties.rustata.maxPages) {
             val uri = UriComponentsBuilder.fromUriString(properties.rustata.baseUrl).path("/api/v1/data")
-                .queryParam("dataset", feed.externalCode).queryParam("geo", "region")
-                .queryParam("class", "7802,7803,7804").queryParam("unit", "RUB")
-                .queryParam("freq", if (feed.frequency == PriceFrequency.WEEKLY) "W" else "M")
-                .queryParam("labels", "1").queryParam("start", window.from).queryParam("end", window.until)
+                .queryParam("dataset", properties.rustata.dataset).queryParam("geo", "region")
+                .queryParam("class", fuels.keys.joinToString(",")).queryParam("unit", "RUB")
+                .queryParam("freq", "W").queryParam("labels", "1")
+                .queryParam("start", window.from).queryParam("end", window.until)
                 .queryParam("limit", properties.rustata.pageSize).queryParam("offset", offset).build().toUri()
             val root = http.read(uri, mapOf("Authorization" to "Bearer ${properties.rustata.token}"), beforeAttempt = ::pace) {
                 json.readTree(it.toFile())
             }
-            require(root.path("series").isArray && root.path("observations").isArray) { "Invalid rustata response" }
-            require(root.path("offset").asInt(-1) == offset) { "Unexpected page offset" }
-            val pageTotal = root.path("series_total").asInt(-1)
-            require(pageTotal >= 0 && (total == null || pageTotal == total)) { "Dataset changed during pagination" }
-            total = pageTotal
-            require(root.path("series_count").asInt(-1) == root.path("series").size())
-            require(root.path("observation_count").asInt(-1) == root.path("observations").size())
 
-            log.info(
-                "Rustata page received [feedCode={}, mode={}, from={}, until={}, page={}, offset={}, series={}, " +
-                    "totalSeries={}, observations={}, hasMore={}]",
-                feed.code, window.mode, window.from, window.until, page, offset, root.path("series_count").asInt(),
-                total, root.path("observation_count").asInt(), root.path("has_more").asString()
-            )
+            require(root.path("series").isArray && root.path("observations").isArray) { "Invalid rustata response" }
+            require(root.path("offset").asInt(-1) == offset) { "Unexpected rustata offset" }
+
+            val pageTotal = root.path("series_total").asInt(-1)
+
+            require(pageTotal >= 0 && (total == null || pageTotal == total)) { "Rustata dataset changed during pagination" }
+            require(root.path("series_count").asInt(-1) == root.path("series").size()) { "Invalid series count" }
+            require(root.path("observation_count").asInt(-1) == root.path("observations").size()) { "Invalid observation count" }
+
+            total = pageTotal
 
             val series = root.path("series").associateBy { required(it, "series_key") }
-            require(series.size == root.path("series").size()) { "Duplicate series key" }
-            require(series.keys.none { it in seenSeries }) { "Repeated series across pages" }
+
+            require(series.size == root.path("series").size() && series.keys.none { it in seenSeries }) { "Repeated rustata series" }
+
             seenSeries.addAll(series.keys)
 
             for (observation in root.path("observations")) {
-                val description = series[required(observation, "series_key")]
-                    ?: throw SourceImportException("UNKNOWN_SERIES", "Observation refers to an unknown series")
-                require(required(description, "geo_level") == "region")
-                require(required(description, "unit") == "RUB")
-                require(required(description, "indicator") == "AVG_PRICE")
-                require(required(description, "freq") == if (feed.frequency == PriceFrequency.WEEKLY) "W" else "M")
-                val fuel = FUELS[required(description, "classification")]
-                    ?: throw SourceImportException("UNKNOWN_FUEL", "Unexpected rustata fuel code")
-                val label = required(description, "class_label")
-                require(label.contains(", л") && label.contains(
-                    if (fuel == "DIESEL") "Дизельное топливо" else if (fuel == "AI_92") "АИ-92" else "АИ-95"
-                )) { "Fuel label or volume does not match" }
-                val region = regions.byCode(required(description, "geo"))
-                    ?: throw SourceImportException("UNKNOWN_REGION", "Unmapped rustata territory")
-                require(regions.byName(required(description, "geo_label"))?.code == region.code) { "Territory code/name mismatch" }
-                val transformation = description.path("transformation")
-                require(transformation.isMissingNode || transformation.isNull || transformation.asString() == "level")
-                val multiplier = description.path("multiplier")
-                require(multiplier.isMissingNode || multiplier.isNull || multiplier.asString() == "1")
-                val sourceDate = LocalDate.parse(required(observation, "period"))
-                require(feed.frequency != PriceFrequency.MONTHLY || sourceDate.dayOfMonth == 1)
+                val description = series.getValue(required(observation, "series_key"))
 
-                val date =
-                    if (feed.frequency == PriceFrequency.MONTHLY) YearMonth.from(sourceDate).atEndOfMonth()
-                    else sourceDate
-                require(date in window.from..window.until) { "Observation outside requested window" }
-                val value = observation.path("value")
-                require(value.isNumber) { "Non-numeric rustata value" }
-                val asOf = observation.path("as_of").takeUnless { it.isMissingNode || it.isNull }?.asString()?.let(LocalDate::parse)
-                val fact = RegionalPriceFact(region.code, fuel, value.decimalValue(), asOf)
+                require(required(description, "geo_level") == "region" && required(description, "unit") == "RUB")
+                require(required(description, "indicator") == "AVG_PRICE" && required(description, "freq") == "W")
+                require(description.path("transformation").asString("level") in listOf("level", ""))
+                require(description.path("unit_mult").asString("1") in listOf("1", ""))
 
-                factsByDate.getOrPut(date) { mutableListOf() }.add(fact)
+                val fuel = checkNotNull(fuels[required(description, "classification")]) { "Unknown rustata fuel" }
+                val region = regions.byOkatoCode(required(description, "geo")) ?: continue
+                val date = LocalDate.parse(required(observation, "period"))
+                val price = observation.path("value").asString().toBigDecimalOrNull()
+
+                require(date in window.from..window.until && price != null && price.signum() > 0) { "Invalid rustata observation" }
+
+                val published = observation.path("as_of").takeUnless { it.isMissingNode || it.isNull }
+                    ?.asString()?.let(LocalDate::parse)
+
+                facts.add(FetchedPrice(region.okatoCode, fuel, date, price, published))
             }
 
-            if (!root.path("has_more").isBoolean) {
-                throw SourceImportException("INVALID_PAGINATION", "Missing pagination completeness marker")
-            }
+            require(root.path("has_more").isBoolean) { "Missing rustata pagination completeness marker" }
 
             if (!root.path("has_more").asBoolean()) {
-                require(seenSeries.size == total) { "Incomplete series set" }
-                complete = true
+                require(seenSeries.size == total) { "Incomplete rustata series set" }
 
-                break
+                return facts
             }
 
             val next = root.path("next_offset").asInt(-1)
-            require(next == offset + series.size && next > offset) { "Pagination made no progress" }
+
+            require(next == offset + series.size && next > offset) { "Rustata pagination made no progress" }
+
             offset = next
         }
 
-        if (!complete) {
-            throw SourceImportException("PAGE_LIMIT", "Rustata page limit exceeded")
-        }
-
-        val calendar =
-            if (feed.frequency == PriceFrequency.WEEKLY && factsByDate.isNotEmpty()) {
-                weeks.resolve(feed, window, factsByDate)
-            } else {
-                emptyMap()
-            }
-
-        return factsByDate.toSortedMap().map { (date, facts) ->
-            val period =
-                if (feed.frequency == PriceFrequency.MONTHLY) {
-                    PricePeriod(feed.frequency, date, date.withDayOfMonth(1), date)
-                } else {
-                    checkNotNull(calendar[date])
-                }
-
-            PreparedPublication(
-                period, "${feed.externalCode}:$date",
-                "${properties.rustata.baseUrl}/indicator/${feed.externalCode}",
-                "Росстат через rustata · средние потребительские цены, ₽/л" +
-                    if (period.referenceDate != date) " · исходная метка rustata: $date" else "", facts
-            )
-        }
+        throw SourceImportException("PAGE_LIMIT", "Rustata page limit exceeded")
     }
 
     private fun pace() {
@@ -185,14 +119,5 @@ class RustataClient(
         name: String
     ): String =
         node.path(name).asString("").takeIf { it.isNotBlank() }
-            ?: throw SourceImportException("INVALID_FORMAT", "Missing rustata field: $name")
-
-    private fun dataset(frequency: PriceFrequency): String =
-        if (frequency == PriceFrequency.WEEKLY) "fedstat/indicator_37426" else "fedstat/indicator_31448"
-
-    companion object {
-        private val log = LoggerFactory.getLogger(RustataClient::class.java)
-
-        private val FUELS = mapOf("7802" to "AI_92", "7803" to "AI_95", "7804" to "DIESEL")
-    }
+            ?: throw SourceImportException("INVALID_RESPONSE", "Missing rustata field [field=$name]")
 }

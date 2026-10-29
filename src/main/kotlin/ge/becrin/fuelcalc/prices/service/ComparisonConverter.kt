@@ -24,7 +24,7 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
                 region = row.region,
                 isBase = row.isBase,
                 price = row.price?.let(cells::available) ?: cells.missing(),
-                latestAvailableDate = context.bounds[row.region.code]?.last,
+                latestAvailableDate = context.bounds[row.region.okatoCode]?.last,
                 differenceRubPerLiter = row.difference?.toPlainString(),
                 isLowest = row.isLowest,
                 isHighest = row.isHighest
@@ -41,19 +41,19 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
         val unavailable = snapshot.status == ComparisonStatus.NO_DATA || snapshot.status == ComparisonStatus.NO_COMMON_PERIOD
         val actualSort = if (unavailable && sortBy == ComparisonSortBy.PRICE) ComparisonSortBy.REGION_NAME else sortBy
         val actualOrder = if (unavailable && sortBy == ComparisonSortBy.PRICE) SortOrder.ASC else sortOrder
-        val rows = snapshot.rows.associateBy { it.region.code }
+        val rows = snapshot.rows.associateBy { it.region.okatoCode }
         val minimum = snapshot.rows.minOfOrNull { it.price }
         val maximum = snapshot.rows.maxOfOrNull { it.price }
         val equal = comparable && minimum?.compareTo(maximum) == 0
-        val base = rows[snapshot.selection.base.code]
+        val base = rows[snapshot.selection.base.okatoCode]
         val primary =
-            if (actualSort == ComparisonSortBy.PRICE) compareBy<RegionRefDto> { rows.getValue(it.code).price }
+            if (actualSort == ComparisonSortBy.PRICE) compareBy<RegionRefDto> { rows.getValue(it.okatoCode).price }
             else compareBy { it.name }
         val directed = if (actualOrder == SortOrder.DESC) primary.reversed() else primary
-        val sorted = snapshot.selection.regions.sortedWith(directed.thenBy { it.name }.thenBy { it.code })
+        val sorted = snapshot.selection.regions.sortedWith(directed.thenBy { it.name }.thenBy { it.okatoCode })
         val data = sorted.map { region ->
-            val row = rows[region.code]
-            val isBase = region.code == snapshot.selection.base.code
+            val row = rows[region.okatoCode]
+            val isBase = region.okatoCode == snapshot.selection.base.okatoCode
             rowConverter(
                 ComparisonRow(
                     region = region,
@@ -80,10 +80,10 @@ class ComparisonConverter(private val cells: PriceCellConverter) {
 
     fun summary(snapshot: ComparisonSnapshot): ComparisonSummaryDto {
         val available = snapshot.status == ComparisonStatus.AVAILABLE
-        val base = snapshot.rows.singleOrNull { it.region.code == snapshot.selection.base.code }
+        val base = snapshot.rows.singleOrNull { it.region.okatoCode == snapshot.selection.base.okatoCode }
         val minimum = if (available) snapshot.rows.minOf { it.price } else null
         val lowest =
-            if (available) snapshot.rows.filter { it.price.compareTo(minimum) == 0 }.map { it.region }.sortedBy { it.code }
+            if (available) snapshot.rows.filter { it.price.compareTo(minimum) == 0 }.map { it.region }.sortedBy { it.okatoCode }
             else emptyList()
 
         return ComparisonSummaryDto(

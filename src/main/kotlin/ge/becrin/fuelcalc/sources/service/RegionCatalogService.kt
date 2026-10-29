@@ -2,13 +2,10 @@ package ge.becrin.fuelcalc.sources.service
 
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
-import ge.becrin.fuelcalc.sources.rosstat.RosstatRegionCatalogParser
-import ge.becrin.fuelcalc.sources.rosstat.RosstatCatalogParser
-import ge.becrin.fuelcalc.prices.PriceFrequency
-import org.jsoup.Jsoup
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.net.URI
+import java.util.concurrent.locks.ReentrantLock
 
 @Service
 class RegionCatalogService(
@@ -16,65 +13,59 @@ class RegionCatalogService(
 
     private val properties: ImportProperties,
 
-    private val parser: RosstatRegionCatalogParser,
-
     private val store: ImportStore,
 
-    private val catalog: RegionCatalog,
-
-    private val documents: RosstatCatalogParser
+    private val catalog: RegionCatalog
 ) {
+    private val lock = ReentrantLock()
+
     fun restore() {
         val saved = store.savedRegions()
 
         if (saved.isNotEmpty()) {
             catalog.replace(saved)
-
-            log.info("Region catalog restored from database [regionCount={}]", saved.size)
         }
     }
 
     fun refresh(): Boolean {
-        var stage = "CATALOG_DOWNLOAD"
-        var url = properties.rosstat.monthlyCatalog
+        if (!lock.tryLock()) {
+            return catalog.isReady
+        }
 
         try {
             http.beginRun()
 
-            val catalogUri = URI.create(properties.rosstat.monthlyCatalog)
-            val document = http.read(catalogUri) { Jsoup.parse(it.toFile(), null, catalogUri.toString()) }
-            val link = documents.links(document, PriceFrequency.MONTHLY)
-                .filter { Regex("20\\d{2}").containsMatchIn(it.title) }
-                .maxByOrNull { link -> Regex("20\\d{2}").findAll(link.title).maxOf { it.value.toInt() } }
-                ?: throw SourceImportException(
-                    "EMPTY_CATALOG", "No current Rosstat workbook found for region catalog [pageTitle=${document.title()}]"
-                )
-            val uri = link.uri
+            val full = http.json(URI.create(properties.regions.okatoEndpoint))
+            val selection = http.json(URI.create(properties.regions.selectionEndpoint))
 
-            require(uri.host == catalogUri.host) { "Rosstat link points outside configured host" }
+            require(full.isArray && selection.isArray && !selection.isEmpty) { "Invalid OKATO catalog or selection" }
 
-            stage = "WORKBOOK_DOWNLOAD"
-            url = uri.toString()
+            val byId = full.associateBy { it.path("id").asLong() }
+            val ids = selection.toList().map { it.path("-298").asLong() }
 
-            log.info("Region catalog workbook selected [url={}]", url)
+            require(byId.size == full.size() && ids.distinct().size == ids.size && ids.all { it in byId }) {
+                "Invalid or unresolved OKATO selection references"
+            }
 
-            val regions = http.read(uri, reader = parser::parse)
-            val verified = RegionCatalog()
-            verified.replace(regions)
+            val selected = ids.map { id ->
+                val row = byId.getValue(id)
 
-            stage = "DATABASE_WRITE"
+                RegionCatalog.Region(row.path("-17006").asString(""), row.path("-17007").asString(""))
+            }.sortedBy { it.okatoCode }
 
-            store.synchronizeRegions(verified.regions)
+            require(selected.all { it.okatoCode.isNotBlank() && it.name.isNotBlank() }) { "Invalid selected territory" }
+            require(selected.map { it.okatoCode }.distinct().size == selected.size) { "Duplicate selected OKATO code" }
+
+            val hash = ImportHash.hash(selected.flatMap { listOf(it.okatoCode, it.name) })
+            val changed = store.synchronizeRegions(selected, hash)
+
             restore()
 
-            log.info("Region catalog refreshed [regionCount={}]", catalog.regions.size)
+            log.info("Region catalog checked [changed={}, territories={}]", changed, selected.size)
         } catch (error: Exception) {
-            val code = (error as? SourceImportException)?.code ?: error.javaClass.simpleName
-
-            log.warn(
-                "Region catalog refresh failed [stage={}, url={}, errorCode={}, savedCatalogAvailable={}, message={}]",
-                stage, url, code, catalog.isReady, error.message, error
-            )
+            log.warn("Region catalog unavailable; saved catalog retained", error)
+        } finally {
+            lock.unlock()
         }
 
         return catalog.isReady

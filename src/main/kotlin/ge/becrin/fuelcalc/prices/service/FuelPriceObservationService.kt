@@ -47,17 +47,9 @@ class FuelPriceObservationService(
                     unit = "RUB/L",
                     price = price,
                     latestAvailableDate = query.latestForProvider(row),
-                    publisher = details.publisher,
-                    providerUrl = details.providerUrl,
-                    datasetId = details.datasetId,
-                    publicationId = details.publicationId,
+                    provider = details.provider,
                     publicationDate = details.publicationDate,
-                    publishedAt = details.publishedAt,
-                    loadedAt = details.loadedAt,
-                    publicationUrl = details.publicationUrl,
-                    attribution = details.attribution,
-                    methodologyUrl = details.methodologyUrl,
-                    note = details.note
+                    loadedAt = details.loadedAt
                 ),
                 states.read(listOf(row.period.frequency))
             )

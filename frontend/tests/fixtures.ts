@@ -1,16 +1,17 @@
+import { decode } from "../src/api/client";
 import type { Page } from "@playwright/test";
 import type { Schema, Selection } from "../src/api/types";
 
-export const regions = [
-  { code: "23000000000", name: "Краснодарский край" },
-  { code: "61000000000", name: "Ростовская область" },
-  { code: "26000000000", name: "Ставропольский край" },
-  { code: "01000000000", name: "Республика с очень длинным названием для проверки переноса" },
+export const regions: Schema<"RegionRef">[] = [
+  { okatoCode: "23000000000", name: "Краснодарский край" },
+  { okatoCode: "61000000000", name: "Ростовская область" },
+  { okatoCode: "26000000000", name: "Ставропольский край" },
+  { okatoCode: "01000000000", name: "Республика с очень длинным названием для проверки переноса" },
 ];
 export const fuels: Schema<"FuelTypeRef">[] = [
-  { code: "DIESEL", name: "Дизельное топливо" },
-  { code: "AI_92", name: "АИ-92" },
-  { code: "AI_95", name: "АИ-95" },
+  { code: "DIESEL", name: "Дизельное топливо", rosstatCode: "7804" },
+  { code: "AI_92", name: "АИ-92", rosstatCode: "7802" },
+  { code: "AI_95", name: "АИ-95", rosstatCode: "7803" },
 ];
 export const meta = {
   requestId: "test-request",
@@ -22,8 +23,8 @@ export const selection: Selection = {
   baseRegionCode: "23000000000",
   regionCodes: ["23000000000", "61000000000", "26000000000"],
   fuelType: "DIESEL",
-  frequency: "WEEKLY",
-  preferredSource: "ROSSTAT",
+  frequency: "DAILY",
+  source: "MARKET",
   dateFrom: "2026-07-29",
   dateTo: "2026-10-29",
 };
@@ -43,18 +44,18 @@ const prices: Record<string, string> = {
 };
 export function price(
   code: string,
-  source: Schema<"PriceSource"> = "ROSSTAT",
+  source: Schema<"PriceSource"> = "MARKET",
 ): Schema<"AvailablePriceCell"> {
   return {
-    priceRubPerLiter: prices[code] ?? "72.50",
-    observationId: `observation-${code}`,
-    period,
-    missingReason: null,
-    source: {
-      provider: { code: source, name: source === "RUSTATA" ? "rustata" : "Росстат" },
-      updateKey: `${source}-WEEKLY`,
-      aggregationMethod: "OFFICIAL_STATISTICS",
+    priceRubPerLiter: (Number(prices[code] ?? "72.50") + (source === "MARKET" ? 1 : 0)).toFixed(2),
+    observationId: `observation-${source}-${code}`,
+    period: {
+      ...period,
+      frequency: source === "MARKET" ? "DAILY" : "WEEKLY",
+      referenceDate: source === "MARKET" ? "2026-10-20" : "2026-10-19",
     },
+    missingReason: null,
+    source,
   };
 }
 export function responses(
@@ -63,10 +64,10 @@ export function responses(
   mode: "normal" | "empty" | "no-common" = "normal",
 ) {
   const selectedRegions = selected.regionCodes
-    .map((code) => regions.find((region) => region.code === code) ?? regions[0])
+    .map((code) => regions.find((region) => region.okatoCode === code) ?? regions[0])
     .filter((region) => region !== undefined);
   const base =
-    selectedRegions.find((region) => region.code === selected.baseRegionCode) ?? regions[0];
+    selectedRegions.find((region) => region.okatoCode === selected.baseRegionCode) ?? regions[0];
   if (!base) {
     throw new Error("Fixture base region missing.");
   }
@@ -77,19 +78,20 @@ export function responses(
     fuelType: fuels.find((fuel) => fuel.code === selected.fuelType) ?? {
       code: "DIESEL",
       name: "Дизель",
+      rosstatCode: "7804",
     },
     dateFrom: selected.dateFrom,
     dateTo: selected.dateTo,
     frequency: selected.frequency,
-    preferredSource: selected.preferredSource,
-    fallbackOrder: [
-      selected.preferredSource,
-      ...(["ROSSTAT", "RUSTATA", "BENZUP"] as const).filter(
-        (source) => source !== selected.preferredSource,
-      ),
-    ],
+    source: selected.source,
     basis: "REGIONAL_CONSUMER_AVERAGE",
     unit: "RUB/L",
+  };
+  const selectedPeriod: Schema<"PricePeriod"> = {
+    ...period,
+    frequency: selected.frequency,
+    referenceDate: selected.source === "OFFICIAL" ? "2026-10-19" : "2026-10-20",
+    label: selected.source === "OFFICIAL" ? "19 октября 2026" : "20 октября 2026",
   };
   const common = { meta: { ...meta, dataVersion: version }, context, sourceUpdates: {} };
   const missing: Schema<"MissingPriceCell"> = {
@@ -107,41 +109,49 @@ export function responses(
             ? "SINGLE_REGION"
             : "AVAILABLE",
     snapshotId: mode === "normal" ? `snapshot-${version}` : null,
-    ...(mode === "normal" ? { period } : {}),
-    sortBy: "PRICE",
+    ...(mode === "normal" ? { period: selectedPeriod } : {}),
+    sortBy: mode === "normal" ? "PRICE" : "REGION_NAME",
     sortOrder: "ASC",
     allPricesEqual: false,
     hasNewerObservations: false,
     data: selectedRegions.map((region) => ({
       region,
-      isBase: region.code === base.code,
-      price:
-        mode === "empty"
-          ? missing
-          : price(region.code, region.code === "61000000000" ? "RUSTATA" : "ROSSTAT"),
-      latestAvailableDate: period.referenceDate,
-      differenceRubPerLiter: mode !== "normal" || region.code === base.code ? null : "-0.70",
-      isLowest: region.code === "61000000000",
-      isHighest: region.code === "26000000000",
+      isBase: region.okatoCode === base.okatoCode,
+      price: mode === "empty" ? missing : price(region.okatoCode, selected.source),
+      latestAvailableDate: mode === "empty" ? null : period.referenceDate,
+      differenceRubPerLiter:
+        mode !== "normal" || region.okatoCode === base.okatoCode
+          ? null
+          : (
+              Number(prices[region.okatoCode] ?? "72.50") -
+              Number(prices[base.okatoCode] ?? "72.50")
+            ).toFixed(2),
+      isLowest: region.okatoCode === "61000000000",
+      isHighest: region.okatoCode === "26000000000",
     })),
   };
   const overview: Schema<"PriceOverview"> = {
     ...common,
-    latestPrice: mode === "empty" ? missing : price(base.code),
-    latestAvailableDate: period.referenceDate,
+    latestPrice: mode === "empty" ? missing : price(base.okatoCode, selected.source),
+    latestAvailableDate: mode === "empty" ? null : period.referenceDate,
     change: {
-      status: "AVAILABLE",
-      startPrice: price(base.code),
-      absoluteRubPerLiter: "1.20",
-      percent: "1.68",
+      status: mode === "empty" ? "INSUFFICIENT_DATA" : "AVAILABLE",
+      startPrice: mode === "empty" ? missing : price(base.okatoCode, selected.source),
+      absoluteRubPerLiter: mode === "empty" ? null : "1.20",
+      percent: mode === "empty" ? null : selected.source === "OFFICIAL" ? "2.10" : "1.68",
     },
     comparison: {
       status: comparison.status,
       snapshotId: comparison.snapshotId,
-      ...(mode === "normal" ? { period } : {}),
+      ...(mode === "normal" ? { period: selectedPeriod } : {}),
       basePriceRubPerLiter: mode === "normal" ? "72.50" : null,
-      lowestPriceRubPerLiter: selectedRegions.length > 1 && mode === "normal" ? "71.80" : null,
-      lowestRegions: selectedRegions.filter((region) => region.code === "61000000000"),
+      lowestPriceRubPerLiter:
+        selectedRegions.length > 1 && mode === "normal"
+          ? selected.source === "OFFICIAL"
+            ? "71.80"
+            : "72.80"
+          : null,
+      lowestRegions: selectedRegions.filter((region) => region.okatoCode === "61000000000"),
       lowestDifferenceRubPerLiter: "-0.70",
       hasNewerObservations: false,
     },
@@ -156,29 +166,20 @@ export function responses(
       points:
         mode === "empty"
           ? []
-          : [
-              {
-                ...price(region.code),
-                period: {
-                  ...period,
-                  key: "first",
-                  referenceDate: "2026-10-05",
-                  label: "5 октября 2026",
-                },
+          : (selected.source === "OFFICIAL"
+              ? ["2026-10-05", "2026-10-12", "2026-10-19"]
+              : ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21"]
+            ).map((day, index) => ({
+              ...(index === (selected.source === "OFFICIAL" ? 1 : 2)
+                ? missing
+                : price(region.okatoCode, selected.source)),
+              period: {
+                ...selectedPeriod,
+                key: `${selected.source}:${day}`,
+                referenceDate: day,
+                label: day,
               },
-              {
-                priceRubPerLiter: null,
-                observationId: null,
-                missingReason: "NO_OBSERVATION_FOR_PERIOD",
-                period: {
-                  ...period,
-                  key: "gap",
-                  referenceDate: "2026-10-12",
-                  label: "12 октября 2026",
-                },
-              },
-              price(region.code, "RUSTATA"),
-            ],
+            })),
     })),
   };
   const totals: Record<string, string> = {
@@ -188,46 +189,60 @@ export function responses(
     "01000000000": "43500.00",
   };
   const calculation: Schema<"RefuelingCalculation"> = {
-    ...common,
+    meta: common.meta,
     volumeLiters: "600",
     currency: "RUB",
-    baseTotalRub: "43500.00",
-    snapshotChanged: false,
-    comparison: {
-      ...comparison,
-      data: selectedRegions.map((region) => ({
-        region,
-        price: price(region.code),
-        latestAvailableDate: period.referenceDate,
-        differenceRubPerLiter: null,
-        isLowest: false,
-        isHighest: false,
-        totalRub: totals[region.code] ?? "43500.00",
-        differenceRub:
-          region.code === base.code ? "0.00" : region.code === "61000000000" ? "-420.00" : "360.00",
-        relation:
-          region.code === base.code ? "BASE" : region.code === "61000000000" ? "LOWER" : "HIGHER",
-      })),
-    },
-  };
-  const coverage: Schema<"CoverageList"> = {
-    meta: common.meta,
-    basis: context.basis,
-    preferredSource: context.preferredSource,
-    fallbackOrder: context.fallbackOrder,
     sourceUpdates: {},
-    data: selectedRegions.flatMap((region) =>
-      (["DAILY", "WEEKLY", "MONTHLY"] as const).map((frequency) => ({
-        region,
-        fuelType: context.fuelType,
-        frequency,
-        firstAvailableDate: "2026-01-01",
-        lastAvailableDate: period.referenceDate,
-        observationCount: 22,
-      })),
-    ),
+    results: (["OFFICIAL", "MARKET"] as const).map((source) => ({
+      context: {
+        ...context,
+        dateFrom: selected.dateTo,
+        dateTo: selected.dateTo,
+        source,
+        frequency: source === "OFFICIAL" ? "WEEKLY" : "DAILY",
+      },
+      status: comparison.status,
+      baseTotalRub:
+        mode === "normal"
+          ? (
+              Number(totals[base.okatoCode] ?? "43500.00") + (source === "MARKET" ? 600 : 0)
+            ).toFixed(2)
+          : null,
+      snapshotChanged: null,
+      comparison:
+        mode === "normal"
+          ? {
+              ...comparison,
+              period: { ...period, frequency: source === "OFFICIAL" ? "WEEKLY" : "DAILY" },
+              data: selectedRegions.map((region) => ({
+                region,
+                price: price(region.okatoCode, source),
+                latestAvailableDate: period.referenceDate,
+                differenceRubPerLiter: null,
+                isLowest: false,
+                isHighest: false,
+                totalRub: (
+                  Number(totals[region.okatoCode] ?? "43500.00") + (source === "MARKET" ? 600 : 0)
+                ).toFixed(2),
+                differenceRub:
+                  region.okatoCode === base.okatoCode
+                    ? "0.00"
+                    : region.okatoCode === "61000000000"
+                      ? "-420.00"
+                      : "360.00",
+                relation:
+                  region.okatoCode === base.okatoCode
+                    ? "BASE"
+                    : region.okatoCode === "61000000000"
+                      ? "LOWER"
+                      : "HIGHER",
+              })),
+            }
+          : null,
+    })),
   };
-  return { overview, trend, comparison: { ...common, comparison }, calculation, coverage };
+
+  return { overview, trend, comparison: { ...common, comparison }, calculation };
 }
 export function apiError(type: Schema<"ErrorResponse">["type"]): Schema<"ErrorResponse"> {
   return {
@@ -256,7 +271,15 @@ export async function mockApi(
     const url = new URL(request.url());
     const path = url.pathname.split("/").at(-1) ?? "";
     const body: unknown = request.postDataJSON();
-    requests.push({ path, query: url.searchParams, body });
+    requests.push({
+      path:
+        (path === "overview" || path === "comparison") &&
+        url.searchParams.get("source") === "OFFICIAL"
+          ? `official-${path}`
+          : path,
+      query: url.searchParams,
+      body,
+    });
     if (path === "regions" || path === "fuel-types") {
       await route.fulfill({ json: { meta, data: path === "regions" ? regions : fuels } });
       return;
@@ -273,17 +296,13 @@ export async function mockApi(
             unit: "RUB/L",
             price: price(selection.baseRegionCode),
             latestAvailableDate: period.referenceDate,
-            publisher: { code: "ROSSTAT", name: "Росстат", url: "https://rosstat.gov.ru/" },
-            providerUrl: "https://rosstat.gov.ru/",
-            datasetId: "test-dataset",
-            publicationId: null,
+            provider: {
+              code: "BENZUP",
+              name: "BenzUp",
+              url: "https://api.omt-consult.ru/index/regional",
+            },
             publicationDate: "2026-10-20",
-            publishedAt: null,
             loadedAt: meta.generatedAt,
-            publicationUrl: null,
-            attribution: "Тестовая публикация",
-            methodologyUrl: null,
-            note: null,
           },
         },
       });
@@ -306,12 +325,12 @@ export async function mockApi(
       dateFrom: query.get("filterDateFrom") ?? selection.dateFrom,
       dateTo: query.get("filterDateTo") ?? selection.dateTo,
     };
-    const source = query.get("preferredSource");
-    if (source === "ROSSTAT" || source === "RUSTATA" || source === "BENZUP") {
-      selected.preferredSource = source;
+    const source = query.get("source");
+    if (source === "OFFICIAL" || source === "MARKET") {
+      selected.source = source;
     }
     const frequency = query.get("frequency");
-    if (frequency === "DAILY" || frequency === "MONTHLY") {
+    if (frequency === "DAILY" || frequency === "WEEKLY") {
       selected.frequency = frequency;
     }
     const fuel = query.get("filterFuelType");
@@ -324,20 +343,50 @@ export async function mockApi(
     const version = query.get("dataVersion") ?? "v1";
     const data = responses(selected, version, options.mode);
     if (path === "calculate") {
-      const result = responses(selection, options.changedCalculation ? "v2" : "v1").calculation;
-      result.snapshotChanged = options.changedCalculation ?? false;
+      const input = decode("RefuelingCalculateRequest", body);
+      const result = responses(
+        {
+          ...selection,
+          ...input.selection,
+          dateFrom: input.selection.date,
+          dateTo: input.selection.date,
+        },
+        options.changedCalculation ? "v2" : "v1",
+        options.mode,
+      ).calculation;
+      result.results.forEach((item) => {
+        item.snapshotChanged = input.expectedSnapshotIds?.[item.context.source]
+          ? (options.changedCalculation ?? false)
+          : null;
+      });
       await route.fulfill({ json: result });
     } else if (path === "overview") {
       await route.fulfill({ json: data.overview });
     } else if (path === "trend") {
       await route.fulfill({ json: data.trend });
-    } else if (path === "coverage") {
-      await route.fulfill({ json: data.coverage });
     } else if (path === "comparison") {
+      const info = data.comparison.comparison;
       const order = query.get("sortOrder");
-      if (order === "DESC") {
-        data.comparison.comparison.sortOrder = order;
+      const field = query.get("sortBy");
+      if (options.mode !== "empty" && options.mode !== "no-common") {
+        if (order === "DESC" || order === "ASC") {
+          info.sortOrder = order;
+        }
+        if (field === "PRICE" || field === "REGION_NAME") {
+          info.sortBy = field;
+        }
       }
+      info.data.sort((a, b) => {
+        const primary =
+          info.sortBy === "PRICE"
+            ? Number(a.price.priceRubPerLiter) - Number(b.price.priceRubPerLiter)
+            : a.region.name.localeCompare(b.region.name, "ru");
+        return (
+          (info.sortOrder === "DESC" ? -primary : primary) ||
+          a.region.name.localeCompare(b.region.name, "ru") ||
+          a.region.okatoCode.localeCompare(b.region.okatoCode)
+        );
+      });
       await route.fulfill({ json: data.comparison });
     } else {
       await route.fulfill({ status: 404, json: apiError("ResourceNotFound") });
@@ -345,4 +394,6 @@ export async function mockApi(
   });
   return requests;
 }
-export const selectionUrl = `/?${new URLSearchParams({ region: selection.baseRegionCode, regions: selection.regionCodes.join(","), fuel: "DIESEL", frequency: "WEEKLY", source: "ROSSTAT", from: selection.dateFrom, to: selection.dateTo })}`;
+export const selectionUrl = `/?${new URLSearchParams({ region: selection.baseRegionCode, regions: selection.regionCodes.join(","), fuel: "DIESEL", from: selection.dateFrom, to: selection.dateTo })}`;
+
+export const refuelingUrl = `/refueling?${new URLSearchParams({ region: selection.baseRegionCode, regions: selection.regionCodes.join(","), fuel: "DIESEL", date: selection.dateTo })}`;

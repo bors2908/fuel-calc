@@ -5,7 +5,5 @@ import java.time.LocalDate
 data class FetchWindow(
     val from: LocalDate,
 
-    val until: LocalDate,
-
-    val mode: String
+    val until: LocalDate
 )

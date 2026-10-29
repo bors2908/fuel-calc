@@ -2,9 +2,6 @@
 java = "25"
 kotlin = "2.4.20"
 spring-boot = "4.1.2"
-commons-csv = "1.14.1"
-apache-poi = "5.5.1"
-jsoup = "1.23.2"
 mockito-kotlin = "6.2.3"
 
 [plugins]
@@ -37,9 +34,6 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
 testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
 
-commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commons-csv" }
-apache-poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "apache-poi" }
-jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
 snake-yaml = { module = "org.yaml:snakeyaml" }
 
@@ -54,7 +48,6 @@ backend = [
   "jackson-module-kotlin",
   "kotlin-reflect",
 ]
-data-parsers = ["commons-csv", "apache-poi-ooxml", "jsoup"]
 testing = [
   "spring-boot-starter-test",
   "spring-boot-starter-webmvc-test",

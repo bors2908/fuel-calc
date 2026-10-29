@@ -1,40 +1,79 @@
-import { useState, useEffect, useRef } from "react";
-import type { Schema } from "../api/types";
-import { number } from "../ui/format";
+import { useEffect, useRef, useState } from "react";
+import type { PriceContext, Schema } from "../api/types";
+import { sourceNames } from "../api/types";
+import { regionName } from "../regions/regionName";
+import { Feedback } from "../ui/Feedback";
+import { date, number } from "../ui/format";
+import type { Block } from "./load";
 import { PriceValue } from "./PriceValue";
 
-type Props = { value: Schema<"PriceTrend">; onObservation: (id: string) => void };
-export function Trend({ value, onObservation }: Props) {
+type Props = {
+  context: PriceContext;
+  market: Block<Schema<"PriceTrend">>;
+  official: Block<Schema<"PriceTrend">>;
+  onObservation: (id: string) => void;
+  onRetry: () => void;
+};
+const dayMs = 86_400_000;
+const sources = ["OFFICIAL", "MARKET"] as const;
+export function Trend({ context, market, official, onObservation, onRetry }: Props) {
   const chart = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1000);
   const [view, setView] = useState<"chart" | "table">("chart");
-  const [hidden, setHidden] = useState<string[]>([]);
   const [active, setActive] = useState("");
-  const periods =
-    value.data[0]?.points.flatMap((point) => (point.period ? [point.period] : [])) ?? [];
-  const selectedPeriod = periods.find((period) => period.key === active) ?? periods.at(-1);
-  const codes = value.data.map((series) => series.region.code).sort();
-  const visible = value.data.filter((series) => !hidden.includes(series.region.code));
-  const prices = visible.flatMap((series) =>
-    series.points.flatMap((point) =>
+  const groups = context.regions.map((region, index) => ({
+    region,
+    index,
+    series: sources.map((source) => {
+      const block = source === "OFFICIAL" ? official : market;
+      const row = block.value?.data.find((item) => item.region.okatoCode === region.okatoCode);
+      return {
+        key: `${region.okatoCode}:${source}`,
+        region,
+        source,
+        index,
+        points: row?.points ?? [],
+        failed: !block.value,
+      };
+    }),
+  }));
+  const series = groups.flatMap((group) => group.series);
+  const regionNames = context.regions.map(regionName).join(", ");
+  const dates = [
+    ...new Set(
+      series.flatMap((item) =>
+        item.points.flatMap((point) => (point.period ? [point.period.referenceDate] : [])),
+      ),
+    ),
+  ].sort();
+  const selectedDate = dates.includes(active) ? active : (dates.at(-1) ?? "");
+  const prices = series.flatMap((item) =>
+    item.points.flatMap((point) =>
       point.priceRubPerLiter === null ? [] : [Number(point.priceRubPerLiter)],
     ),
   );
-  const min = prices.length > 0 ? Math.min(...prices) : 0;
-  const max = prices.length > 0 ? Math.max(...prices) : 1;
+  const hasData = prices.length > 0;
+  const min = hasData ? Math.min(...prices) : 0;
+  const max = hasData ? Math.max(...prices) : 1;
   const padding = Math.max((max - min) * 0.15, 0.2);
   const lower = Math.max(0, min - padding);
   const upper = max + padding;
-  const firstTime = Date.parse(periods[0]?.referenceDate ?? "2000-01-01");
-  const lastTime = Date.parse(periods.at(-1)?.referenceDate ?? "2000-01-01");
+  const firstTime = Date.parse(context.dateFrom);
+  const lastTime = Date.parse(context.dateTo);
   const x = (day: string) =>
     firstTime === lastTime
       ? width / 2
-      : 76 + ((Date.parse(day) - firstTime) / (lastTime - firstTime)) * (width - 130);
+      : 64 + ((Date.parse(day) - firstTime) / (lastTime - firstTime)) * (width - 100);
   const y = (price: number) => 255 - ((price - lower) / (upper - lower)) * 210;
-  const hasData = value.data.some((series) =>
-    series.points.some((point) => point.priceRubPerLiter !== null),
-  );
+  const axisDates = [
+    ...new Set([
+      context.dateFrom,
+      new Date(firstTime + Math.floor((lastTime - firstTime) / dayMs / 2) * dayMs)
+        .toISOString()
+        .slice(0, 10),
+      context.dateTo,
+    ]),
+  ];
   useEffect(() => {
     const target = chart.current;
     if (!target) {
@@ -55,15 +94,11 @@ export function Trend({ value, onObservation }: Props) {
     >
       <div className="section-heading">
         <div>
+          <p className="eyebrow">Официальная статистика и рынок</p>
           <h2>Как менялась цена</h2>
           <p className="muted">
-            {value.context.fuelType.name} · ₽/л ·{" "}
-            {
-              { DAILY: "Дневные", WEEKLY: "Недельные", MONTHLY: "Месячные" }[
-                value.context.frequency
-              ]
-            }{" "}
-            наблюдения
+            {context.fuelType.name} · ₽/л ·{" "}
+            {context.regions.length === 1 ? regionNames : "Выбранные регионы"}
           </p>
         </div>
         <div
@@ -87,11 +122,61 @@ export function Trend({ value, onObservation }: Props) {
           </button>
         </div>
       </div>
+      <div
+        className="legend"
+        role="group"
+        aria-label="Регионы и источники на графике"
+      >
+        {groups.map((group) => (
+          <div
+            className={`legend-region series-${group.index}`}
+            key={group.region.okatoCode}
+            data-region={group.region.okatoCode}
+          >
+            <strong>
+              {regionName(group.region)}
+              {group.region.okatoCode === context.baseRegion.okatoCode && " · мой регион"}
+            </strong>
+            {group.series.map((item) => (
+              <div
+                className="legend-item"
+                key={item.key}
+                data-source={item.source}
+              >
+                <span
+                  className="legend-swatch"
+                  aria-hidden="true"
+                />
+                <span>
+                  {sourceNames[item.source]}
+                  <small>
+                    {item.failed
+                      ? "История недоступна"
+                      : !item.points.some((point) => point.priceRubPerLiter !== null)
+                        ? "Нет наблюдений за период"
+                        : item.source === "OFFICIAL"
+                          ? "Росстат · по неделям"
+                          : "BenzUp · по дням"}
+                  </small>
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {sources.map((source) =>
+        !(source === "OFFICIAL" ? official : market).value ? (
+          <Feedback
+            key={source}
+            onRetry={onRetry}
+          >
+            Не удалось загрузить историю: {sourceNames[source].toLowerCase()}. Данные другого
+            источника остаются доступны.
+          </Feedback>
+        ) : null,
+      )}
       {!hasData ? (
-        <p className="empty-state">
-          В выбранном диапазоне нет истории. Измените период; доступные границы можно посмотреть в
-          «Покрытии архива».
-        </p>
+        <p className="empty-state">В выбранном диапазоне нет истории. Попробуйте другой период.</p>
       ) : (
         <>
           {view === "chart" ? (
@@ -105,15 +190,15 @@ export function Trend({ value, onObservation }: Props) {
                   role="img"
                   aria-labelledby="chart-title chart-description"
                 >
-                  <title id="chart-title">
-                    Цены на {value.context.fuelType.name} в выбранных регионах
-                  </title>
+                  <title id="chart-title">Официальная и рыночная цена · {regionNames}</title>
                   <desc id="chart-description">
-                    Пропуски показаны разрывами. Точные значения и источники доступны ниже в выборе
-                    периода и в таблице.
+                    Общая шкала по дням. Официальные точки — недельные, рыночные — дневные. Пропуски
+                    показаны разрывами. Цвет обозначает регион; сплошная линия и закрашенные кружки
+                    — официальную цену, пунктир и полые кружки — рыночную. Точные значения доступны
+                    в таблице и выборе даты.
                   </desc>
                   <text
-                    x="12"
+                    x="8"
                     y="20"
                   >
                     ₽/л
@@ -124,13 +209,13 @@ export function Trend({ value, onObservation }: Props) {
                       <g key={tick}>
                         <line
                           className="chart-grid"
-                          x1="76"
-                          x2={width - 54}
+                          x1="64"
+                          x2={width - 36}
                           y1={y(price)}
                           y2={y(price)}
                         />
                         <text
-                          x="65"
+                          x="54"
                           y={y(price) + 5}
                           textAnchor="end"
                         >
@@ -139,36 +224,43 @@ export function Trend({ value, onObservation }: Props) {
                       </g>
                     );
                   })}
-                  {visible.map((series) => {
+                  {series.map((item) => {
                     let path = "";
-                    let connected = false;
-                    for (const point of series.points) {
+                    let previous: number | null = null;
+                    for (const point of item.points) {
                       if (point.priceRubPerLiter === null) {
-                        connected = false;
+                        previous = null;
                       } else {
+                        const time = Date.parse(point.period.referenceDate);
+                        const connected =
+                          previous !== null &&
+                          time - previous <= (item.source === "OFFICIAL" ? 7 : 1) * dayMs;
                         path += `${connected ? "L" : "M"}${x(point.period.referenceDate)},${y(Number(point.priceRubPerLiter))} `;
-                        connected = true;
+                        previous = time;
                       }
                     }
                     return (
                       <g
-                        key={series.region.code}
-                        className={`series series-${codes.indexOf(series.region.code)}${series.region.code === value.context.baseRegion.code ? " base-series" : ""}`}
+                        key={item.key}
+                        className={`series series-${item.index}`}
+                        data-source={item.source}
+                        data-region={item.region.okatoCode}
                       >
                         <path d={path} />
-                        {series.points.map((point) =>
+                        {item.points.map((point) =>
                           point.priceRubPerLiter === null ? null : (
                             <circle
                               key={point.period.key}
                               cx={x(point.period.referenceDate)}
                               cy={y(Number(point.priceRubPerLiter))}
-                              r="4"
-                              onPointerEnter={() => setActive(point.period.key)}
-                              onPointerDown={() => setActive(point.period.key)}
+                              r={item.source === "OFFICIAL" ? 5 : 3.5}
+                              onPointerEnter={() => setActive(point.period.referenceDate)}
+                              onPointerDown={() => setActive(point.period.referenceDate)}
                             >
                               <title>
-                                {series.region.name}: {number(point.priceRubPerLiter)} ₽/л ·{" "}
-                                {point.period.label} · {point.source.provider.name}
+                                {regionName(item.region)} · {sourceNames[item.source]} ·{" "}
+                                {date(point.period.referenceDate)} ·{" "}
+                                {number(point.priceRubPerLiter)} ₽/л
                               </title>
                             </circle>
                           ),
@@ -176,91 +268,78 @@ export function Trend({ value, onObservation }: Props) {
                       </g>
                     );
                   })}
-                  {periods
-                    .filter(
-                      (_, index) =>
-                        index === 0 ||
-                        index === periods.length - 1 ||
-                        index === Math.floor(periods.length / 2),
-                    )
-                    .map((period) => (
-                      <text
-                        key={period.key}
-                        x={x(period.referenceDate)}
-                        y="295"
-                        textAnchor="middle"
-                      >
-                        {new Intl.DateTimeFormat("ru-RU", {
-                          day: "numeric",
-                          month: "short",
-                          timeZone: "UTC",
-                        }).format(new Date(`${period.referenceDate}T00:00:00Z`))}
-                      </text>
-                    ))}
+                  {axisDates.map((day) => (
+                    <text
+                      key={day}
+                      x={x(day)}
+                      y="295"
+                      textAnchor="middle"
+                    >
+                      {new Intl.DateTimeFormat("ru-RU", {
+                        day: "numeric",
+                        month: "short",
+                        timeZone: "UTC",
+                      }).format(new Date(`${day}T00:00:00Z`))}
+                    </text>
+                  ))}
                 </svg>
               </div>
-              <div
-                className="legend"
-                role="group"
-                aria-label="Видимые линии"
-              >
-                {value.data.map((series) => (
-                  <button
-                    type="button"
-                    className={`legend-item series-${codes.indexOf(series.region.code)}`}
-                    key={series.region.code}
-                    aria-pressed={!hidden.includes(series.region.code)}
-                    onClick={() =>
-                      setHidden(
-                        hidden.includes(series.region.code)
-                          ? hidden.filter((code) => code !== series.region.code)
-                          : [...hidden, series.region.code],
-                      )
-                    }
-                  >
-                    <span
-                      className="legend-swatch"
-                      aria-hidden="true"
-                    />
-                    {series.region.name}
-                    {series.region.code === value.context.baseRegion.code && " · мой"}
-                  </button>
-                ))}
-              </div>
               <div className="chart-detail">
-                <label htmlFor="chart-period">Период на графике — точные значения</label>
+                <label htmlFor="chart-period">Дата на графике — точные значения</label>
                 <select
                   id="chart-period"
-                  value={selectedPeriod?.key ?? ""}
+                  value={selectedDate}
                   onChange={(event) => setActive(event.target.value)}
                 >
-                  {periods.map((period) => (
+                  {dates.map((day) => (
                     <option
-                      key={period.key}
-                      value={period.key}
+                      key={day}
+                      value={day}
                     >
-                      {period.label}
+                      {date(day)}
                     </option>
                   ))}
                 </select>
                 <div className="chart-prices">
-                  {visible.map((series) => {
-                    const point = series.points.find(
-                      (item) => item.period?.key === selectedPeriod?.key,
-                    );
-                    return (
-                      <div key={series.region.code}>
-                        <h3>{series.region.name}</h3>
-                        {point && (
-                          <PriceValue
-                            price={point}
-                            preferredSource={value.context.preferredSource}
-                            onObservation={onObservation}
-                          />
-                        )}
+                  {groups.map((group) => (
+                    <section
+                      className={`chart-region series-${group.index}`}
+                      key={group.region.okatoCode}
+                      data-region={group.region.okatoCode}
+                    >
+                      <h3>
+                        {regionName(group.region)}
+                        {group.region.okatoCode === context.baseRegion.okatoCode && " · мой регион"}
+                      </h3>
+                      <div className="chart-region-sources">
+                        {group.series.map((item) => {
+                          const point = item.points.find(
+                            (value) => value.period?.referenceDate === selectedDate,
+                          );
+                          return (
+                            <div
+                              key={item.key}
+                              data-source={item.source}
+                            >
+                              <h4>{sourceNames[item.source]}</h4>
+                              {point ? (
+                                <PriceValue
+                                  price={point}
+                                  onObservation={onObservation}
+                                />
+                              ) : (
+                                <p className="muted">
+                                  {item.failed
+                                    ? "История недоступна"
+                                    : "Нет наблюдения на эту дату"}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </section>
+                  ))}
                 </div>
               </div>
             </>
@@ -273,36 +352,66 @@ export function Trend({ value, onObservation }: Props) {
             >
               <table>
                 <caption>
-                  Наблюдения · {value.context.fuelType.name}, ₽/л. «—» означает отсутствие
-                  наблюдения.
+                  {regionNames} · {context.fuelType.name}, ₽/л. «—» — нет наблюдения на эту дату.
                 </caption>
+                <colgroup span={1} />
+                {groups.map((group) => (
+                  <colgroup
+                    key={group.region.okatoCode}
+                    span={2}
+                  />
+                ))}
                 <thead>
                   <tr>
-                    <th scope="col">Период</th>
-                    {value.data.map((series) => (
+                    <th
+                      scope="col"
+                      rowSpan={2}
+                    >
+                      Дата
+                    </th>
+                    {groups.map((group) => (
+                      <th
+                        scope="colgroup"
+                        colSpan={2}
+                        key={group.region.okatoCode}
+                      >
+                        {regionName(group.region)}
+                        {group.region.okatoCode === context.baseRegion.okatoCode && " · мой регион"}
+                      </th>
+                    ))}
+                  </tr>
+                  <tr>
+                    {series.map((item) => (
                       <th
                         scope="col"
-                        key={series.region.code}
+                        key={item.key}
                       >
-                        {series.region.name}
+                        {sourceNames[item.source]}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {periods.map((period) => (
-                    <tr key={period.key}>
-                      <th scope="row">{period.label}</th>
-                      {value.data.map((series) => {
-                        const point = series.points.find((item) => item.period?.key === period.key);
+                  {dates.map((day) => (
+                    <tr key={day}>
+                      <th scope="row">{date(day)}</th>
+                      {series.map((item) => {
+                        const point = item.points.find(
+                          (value) => value.period?.referenceDate === day,
+                        );
                         return (
-                          <td key={series.region.code}>
-                            {point && (
+                          <td
+                            key={item.key}
+                            data-region={item.region.okatoCode}
+                            data-source={item.source}
+                          >
+                            {point?.priceRubPerLiter ? (
                               <PriceValue
                                 price={point}
-                                preferredSource={value.context.preferredSource}
                                 onObservation={onObservation}
                               />
+                            ) : (
+                              "—"
                             )}
                           </td>
                         );
@@ -314,8 +423,9 @@ export function Trend({ value, onObservation }: Props) {
             </div>
           )}
           <p className="muted chart-note">
-            Региональные средние. Разрыв линии означает отсутствие наблюдения, а не нулевую цену.
-            Источники указаны у значений.
+            Каждый кружок — сохранённое наблюдение на указанную дату. Линии соединяют соседние
+            наблюдения; ежедневные официальные значения не рассчитываются. Разрыв означает
+            отсутствие данных.
           </p>
         </>
       )}

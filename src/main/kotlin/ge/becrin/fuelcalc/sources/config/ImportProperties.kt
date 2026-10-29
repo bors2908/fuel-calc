@@ -6,34 +6,36 @@ import java.time.LocalDate
 
 @ConfigurationProperties("imports")
 class ImportProperties {
+    class Regions {
+        var okatoEndpoint: String = "https://showdata.rosstat.gov.ru/backbone/set/13032"
+
+        var selectionEndpoint: String = "https://showdata.rosstat.gov.ru/backbone/set/304297"
+
+        var cron: String = "0 0 3 * * MON"
+    }
+
     class Rosstat {
-        var enabled: Boolean = true
+        var baseUrl: String = "https://showdata.rosstat.gov.ru"
 
-        var fetchOnStartup: Boolean = true
+        var indicatorId: Long = 274422
 
-        var cron: String = "0 0 */6 * * *"
+        var goodsSetId: Long = 108929
+
+        var startDate: LocalDate = LocalDate.of(2026, 1, 1)
+
+        var cron: String = "0 0 0 * * *"
 
         var ignoreTlsErrors: Boolean = true
 
         var requestTimeout: Duration = Duration.ofMinutes(2)
-
-        var monthlyInterval: Duration = Duration.ofHours(24)
-
-        var weeklyCatalog: String = "https://rosstat.gov.ru/compendium/document/50798"
-
-        var monthlyCatalog: String = "https://rosstat.gov.ru/statistics/price"
     }
 
     class Rustata {
-        var enabled: Boolean = true
-
-        var fetchOnStartup: Boolean = true
-
-        var cron: String = "0 30 */6 * * *"
-
         var baseUrl: String = "https://rustata.ru"
 
-        var monthlyInterval: Duration = Duration.ofHours(24)
+        var dataset: String = "fedstat/indicator_37426"
+
+        var startDate: LocalDate = LocalDate.of(2026, 1, 1)
 
         var token: String = ""
 
@@ -41,19 +43,15 @@ class ImportProperties {
 
         var pageSize: Int = 300
 
-        var maxPages: Int = 10
+        var maxPages: Int = 20
     }
 
     class Benzup {
-        var enabled: Boolean = true
-
-        var fetchOnStartup: Boolean = true
-
-        var cron: String = "0 15 0,6,12,18 * * *"
-
         var endpoint: String = "https://api.omt-consult.ru/index/regional"
 
         var token: String = ""
+
+        var cron: String = "0 0 12 * * *"
     }
 
     var enabled: Boolean = true
@@ -62,21 +60,15 @@ class ImportProperties {
 
     var timeZone: String = "Europe/Moscow"
 
-    var historyFrom: LocalDate = LocalDate.of(2026, 1, 1)
-
-    var historyWindowsPerRun: Int = 2
-
-    var reconciliationInterval: Duration = Duration.ofDays(7)
-
-    var batchSize: Int = 500
-
     var connectTimeout: Duration = Duration.ofSeconds(10)
 
     var requestTimeout: Duration = Duration.ofSeconds(30)
 
     var maxResponseBytes: Int = 32 * 1024 * 1024
 
-    var maxRunDuration: Duration = Duration.ofMinutes(10)
+    var maxRunDuration: Duration = Duration.ofMinutes(30)
+
+    var regions: Regions = Regions()
 
     var rosstat: Rosstat = Rosstat()
 

@@ -24,10 +24,10 @@ class FuelPriceTrendService(
             val context = contexts.query(input, meta.serverDate)
             val rows = query.range(context.selection)
             val calendar = rows.map { it.period }.distinctBy { it.key }.sortedWith(compareBy({ it.referenceDate }, { it.key }))
-            val byRegion = rows.groupBy { it.region.code }
+            val byRegion = rows.groupBy { it.region.okatoCode }
             val data = context.selection.regions.map { region ->
-                val available = byRegion[region.code].orEmpty().associateBy { it.period.key }
-                val bounds = context.bounds[region.code]
+                val available = byRegion[region.okatoCode].orEmpty().associateBy { it.period.key }
+                val bounds = context.bounds[region.okatoCode]
                 val points = calendar.map { period ->
                     available[period.key]?.let { cells.available(it) }
                         ?: cells.missing(MissingPriceReason.NO_OBSERVATION_FOR_PERIOD, period)

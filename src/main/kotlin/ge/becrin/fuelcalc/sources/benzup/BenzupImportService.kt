@@ -1,32 +1,29 @@
 package ge.becrin.fuelcalc.sources.benzup
 
-import ge.becrin.fuelcalc.prices.PriceFrequency
-import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyRepository
-import ge.becrin.fuelcalc.prices.service.RegionalPricePublicationService
+import ge.becrin.fuelcalc.fuels.FuelType
+import ge.becrin.fuelcalc.sources.PriceSource
+import ge.becrin.fuelcalc.sources.SourceProvider
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
-import ge.becrin.fuelcalc.sources.model.FeedDefinition
+import ge.becrin.fuelcalc.sources.model.FetchWindow
+import ge.becrin.fuelcalc.sources.model.FetchedPrice
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
-import ge.becrin.fuelcalc.sources.service.SourceImportException
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Clock
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.concurrent.locks.ReentrantLock
 
 @Service
 class BenzupImportService(
     private val client: BenzupClient,
 
-    private val archive: BenzupArchiveService,
-
-    private val publisher: RegionalPricePublicationService,
-
-    private val store: ImportStore,
+    private val mapping: BenzupRegionMapping,
 
     private val catalog: RegionCatalog,
 
-    private val keys: RegionalPriceKeyRepository,
+    private val store: ImportStore,
 
     private val properties: ImportProperties,
 
@@ -34,114 +31,41 @@ class BenzupImportService(
 ) {
     private val lock = ReentrantLock()
 
-    fun initialize() {
-        store.initialize(PriceFrequency.entries.map(::definition))
-    }
-
     fun fetch() {
-        if (!properties.enabled || !properties.benzup.enabled || !lock.tryLock()) {
+        if (!properties.enabled || !catalog.isReady || !lock.tryLock()) {
             return
         }
 
-        val runs = mutableMapOf<PriceFrequency, Long>()
-        var failure: SourceImportException? = null
-
         try {
-            for (frequency in PriceFrequency.entries) {
-                store.begin(definition(frequency))?.let { runs[frequency] = it }
-            }
-
-            val dailyRun = runs[PriceFrequency.DAILY] ?: return
-            val incoming = client.fetch()
-            val collectedAt = clock.instant()
-            val regionById = incoming.distinctBy { it.regionId }.associate { it.regionId to resolve(it.regionName) }
-            val skipped = regionById.filterValues { it == null }.keys
-
-            if (skipped.isNotEmpty()) {
-                log.warn("BenzUp regions outside Rosstat catalog skipped [regionIds={}]", skipped)
-            }
-
-            val mapped = incoming.mapNotNull { row ->
-                regionById[row.regionId]?.let { (it.code to row.fuelCode) to row.price }
-            }
-            val prices = mapped.toMap()
-
-            require(prices.size == mapped.size) { "Ambiguous BenzUp region mapping" }
-
-            if (prices.isEmpty()) {
-                throw SourceImportException("EMPTY_PUBLICATION", "BenzUp snapshot has no regions from Rosstat catalog")
-            }
-
-            archive.record(dailyRun, prices, collectedAt)
+            val today = LocalDate.now(clock.withZone(ZoneId.of(properties.timeZone)))
 
             log.info(
-                "BenzUp snapshot collected [runId={}, regions={}, prices={}, collectedAt={}]",
-                dailyRun, prices.keys.map { it.first }.distinct().size, prices.size, collectedAt
+                "Loading data [source={}, provider={}, from={}, until={}]",
+                PriceSource.MARKET, SourceProvider.BENZUP, today, today
+            )
+
+            val prices = client.fetch().mapNotNull { row ->
+                mapping.okatoByRegionId[row.regionId]?.let(catalog::byOkatoCode)?.let { region ->
+                    FetchedPrice(region.okatoCode, FuelType.valueOf(row.fuelCode), today, row.price)
+                }
+            }
+
+            require(prices.isNotEmpty()) { "BenzUp snapshot has no mapped regions" }
+
+            val changed = store.saveWindow(SourceProvider.BENZUP, FetchWindow(today, today), prices)
+
+            log.info(
+                "Data loaded [source={}, provider={}, from={}, until={}, prices={}, changed={}]",
+                PriceSource.MARKET, SourceProvider.BENZUP, today, today, prices.size, changed
             )
         } catch (error: Exception) {
-            failure = error as? SourceImportException
-                ?: SourceImportException("IMPORT_FAILED", "BenzUp import failed: ${error.message}", cause = error)
+            store.failed(PriceSource.MARKET, error)
+
+            log.warn("Data loading failed; saved data retained [source={}]", PriceSource.MARKET, error)
         } finally {
-            try {
-                for ((frequency, runId) in runs) {
-                    var feedFailure = failure
-                    var inserted = 0
-
-                    if (feedFailure == null) {
-                        try {
-                            val feed = definition(frequency)
-                            val today = LocalDate.now(clock.withZone(BenzupArchiveService.ZONE))
-                            val since = store.lastSuccess(feed)?.atZone(BenzupArchiveService.ZONE)?.toLocalDate()
-
-                            for (publication in archive.prepare(frequency, today, since, properties.benzup.endpoint)) {
-                                val result = publisher.publish(feed, runId, publication)
-                                inserted += result.inserted
-
-                                if (result.conflicts > 0) {
-                                    throw SourceImportException("UNRESOLVED_REVISION", "Conflicting BenzUp aggregate revision")
-                                }
-                            }
-                        } catch (error: Exception) {
-                            feedFailure = error as? SourceImportException
-                                ?: SourceImportException("PUBLISH_FAILED", "BenzUp publication failed: ${error.message}", cause = error)
-                        }
-                    }
-
-                    val latest = keys.latestDate("BENZUP", frequency)
-                    val freshness = if (latest == null) "UNKNOWN" else "READY"
-                    store.finish(runId, inserted, feedFailure, freshness)
-
-                    if (feedFailure == null) {
-                        log.info(
-                            "BenzUp import finished [frequency={}, runId={}, inserted={}, latest={}]",
-                            frequency, runId, inserted, latest
-                        )
-                    } else {
-                        log.warn(
-                            "BenzUp import failed [frequency={}, runId={}, errorCode={}]",
-                            frequency, runId, feedFailure.code, feedFailure
-                        )
-                    }
-                }
-            } finally {
-                lock.unlock()
-            }
+            lock.unlock()
         }
     }
-
-    fun definition(frequency: PriceFrequency): FeedDefinition =
-        FeedDefinition(
-            code = "BENZUP_${frequency}_V1",
-            provider = "BENZUP",
-            publisher = "BENZUP",
-            frequency = frequency,
-            externalCode = properties.benzup.endpoint,
-            samplingPolicy = BenzupArchiveService.POLICY
-        )
-
-    private fun resolve(name: String): RegionCatalog.Region? =
-        catalog.byName(name)
-            ?: if (name == "Ханты-Мансийский автономный округ") catalog.byName("$name - Югра") else null
 
     companion object {
         private val log = LoggerFactory.getLogger(BenzupImportService::class.java)

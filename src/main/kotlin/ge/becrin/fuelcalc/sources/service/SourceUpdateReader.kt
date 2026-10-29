@@ -2,27 +2,28 @@ package ge.becrin.fuelcalc.sources.service
 
 import ge.becrin.fuelcalc.prices.PriceFrequency
 import ge.becrin.fuelcalc.sources.PriceSource
+import ge.becrin.fuelcalc.sources.SourceUpdateStatus
 import ge.becrin.fuelcalc.sources.dto.SourceUpdateDto
-import ge.becrin.fuelcalc.sources.jpa.SourceFeedRepository
+import ge.becrin.fuelcalc.sources.jpa.ImportStateRepository
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 
 @Repository
-class SourceUpdateReader(private val feeds: SourceFeedRepository) {
+class SourceUpdateReader(private val states: ImportStateRepository) {
     @Transactional(readOnly = true)
     fun read(frequencies: Collection<PriceFrequency> = PriceFrequency.entries): Map<String, SourceUpdateDto> {
-        if (frequencies.isEmpty()) {
-            return emptyMap()
-        }
+        val saved = states.findAll().associateBy { it.code }
 
-        return feeds.findForFrequencies(frequencies).associate { feed ->
-            feed.code to SourceUpdateDto(
-                provider = PriceSource.valueOf(feed.provider.code),
-                frequency = feed.frequency,
-                status = feed.updateStatus,
-                lastSuccessAt = feed.lastSuccessAt,
-                nextExpectedPublicationAt = feed.nextExpectedPublicationAt
-            )
+        return PriceSource.entries.filter { it.frequency in frequencies }.associate { source ->
+            val state = saved[source.name]
+            val status =
+                when {
+                    state?.errorMessage != null -> SourceUpdateStatus.UNAVAILABLE
+                    state?.lastSuccessAt != null -> SourceUpdateStatus.READY
+                    else -> SourceUpdateStatus.UNKNOWN
+                }
+
+            source.name to SourceUpdateDto(source, source.frequency, status, state?.lastSuccessAt)
         }
     }
 }

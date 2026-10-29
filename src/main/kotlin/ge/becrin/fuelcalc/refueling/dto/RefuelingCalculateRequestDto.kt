@@ -2,13 +2,13 @@ package ge.becrin.fuelcalc.refueling.dto
 
 import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
-import ge.becrin.fuelcalc.prices.dto.PriceSelectionDto
+import ge.becrin.fuelcalc.sources.PriceSource
 
 data class RefuelingCalculateRequestDto(
-    val selection: PriceSelectionDto,
+    val selection: RefuelingSelectionDto,
 
     val volumeLiters: String,
 
-    @param:JsonSetter(nulls = Nulls.FAIL)
-    val expectedSnapshotId: String? = null
+    @param:JsonSetter(nulls = Nulls.FAIL, contentNulls = Nulls.FAIL)
+    val expectedSnapshotIds: Map<PriceSource, String> = emptyMap()
 )

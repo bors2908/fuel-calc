@@ -94,12 +94,12 @@
     },
     "RegionRef": {
       "required": [
-        "code",
+        "okatoCode",
         "name"
       ],
       "type": "object",
       "properties": {
-        "code": {
+        "okatoCode": {
           "$ref": "#/definitions/RegionCode"
         },
         "name": {
@@ -111,7 +111,8 @@
     "FuelTypeRef": {
       "required": [
         "code",
-        "name"
+        "name",
+        "rosstatCode"
       ],
       "type": "object",
       "properties": {
@@ -119,8 +120,15 @@
           "$ref": "#/definitions/FuelType"
         },
         "name": {
+          "type": "string"
+        },
+        "rosstatCode": {
           "type": "string",
-          "minLength": 1
+          "enum": [
+            "7804",
+            "7802",
+            "7803"
+          ]
         }
       }
     },
@@ -163,36 +171,9 @@
     "PriceSource": {
       "type": "string",
       "enum": [
-        "ROSSTAT",
-        "RUSTATA",
-        "BENZUP"
+        "OFFICIAL",
+        "MARKET"
       ]
-    },
-    "SourceFallbackOrder": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/PriceSource"
-      },
-      "minItems": 3,
-      "maxItems": 3,
-      "uniqueItems": true
-    },
-    "SourceLabel": {
-      "required": [
-        "code",
-        "name"
-      ],
-      "type": "object",
-      "properties": {
-        "code": {
-          "$ref": "#/definitions/PriceSource"
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "additionalProperties": false
     },
     "SourceRef": {
       "required": [
@@ -217,112 +198,16 @@
         }
       }
     },
-    "RegionalPriceSample": {
-      "required": [
-        "policyCode",
-        "measurementCount",
-        "dayCount",
-        "expectedDayCount",
-        "collectedAt"
-      ],
-      "type": "object",
-      "properties": {
-        "policyCode": {
-          "type": "string",
-          "minLength": 1
-        },
-        "measurementCount": {
-          "type": "integer",
-          "format": "int32",
-          "minimum": 1
-        },
-        "dayCount": {
-          "type": "integer",
-          "format": "int32",
-          "minimum": 1,
-          "maximum": 31
-        },
-        "expectedDayCount": {
-          "type": "integer",
-          "format": "int32",
-          "minimum": 1,
-          "maximum": 31
-        },
-        "collectedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      }
-    },
-    "SourceSummary": {
-      "required": [
-        "provider",
-        "updateKey",
-        "aggregationMethod"
-      ],
-      "type": "object",
-      "oneOf": [
-        {
-          "properties": {
-            "aggregationMethod": {
-              "type": "string",
-              "enum": [
-                "OFFICIAL_STATISTICS"
-              ]
-            }
-          },
-          "not": {
-            "required": [
-              "sample"
-            ]
-          }
-        },
-        {
-          "required": [
-            "sample"
-          ],
-          "properties": {
-            "aggregationMethod": {
-              "type": "string",
-              "enum": [
-                "REGIONAL_INDEX_MEAN"
-              ]
-            }
-          }
-        }
-      ],
-      "properties": {
-        "provider": {
-          "$ref": "#/definitions/SourceLabel"
-        },
-        "updateKey": {
-          "type": "string",
-          "minLength": 1
-        },
-        "aggregationMethod": {
-          "type": "string",
-          "enum": [
-            "OFFICIAL_STATISTICS",
-            "REGIONAL_INDEX_MEAN"
-          ]
-        },
-        "sample": {
-          "$ref": "#/definitions/RegionalPriceSample"
-        }
-      },
-      "additionalProperties": false
-    },
     "SourceUpdate": {
       "required": [
-        "provider",
+        "source",
         "frequency",
         "status",
-        "lastSuccessAt",
-        "nextExpectedPublicationAt"
+        "lastSuccessAt"
       ],
       "type": "object",
       "properties": {
-        "provider": {
+        "source": {
           "$ref": "#/definitions/PriceSource"
         },
         "frequency": {
@@ -332,7 +217,6 @@
           "type": "string",
           "enum": [
             "READY",
-            "DELAYED",
             "UNAVAILABLE",
             "UNKNOWN"
           ]
@@ -341,14 +225,8 @@
           "type": "string",
           "format": "date-time",
           "nullable": true
-        },
-        "nextExpectedPublicationAt": {
-          "type": "string",
-          "format": "date-time",
-          "nullable": true
         }
-      },
-      "additionalProperties": false
+      }
     },
     "SourceUpdates": {
       "type": "object",
@@ -360,8 +238,7 @@
       "type": "string",
       "enum": [
         "DAILY",
-        "WEEKLY",
-        "MONTHLY"
+        "WEEKLY"
       ]
     },
     "PriceBasis": {
@@ -385,7 +262,7 @@
         "dateFrom",
         "dateTo",
         "frequency",
-        "preferredSource"
+        "source"
       ],
       "type": "object",
       "properties": {
@@ -415,7 +292,7 @@
         "frequency": {
           "$ref": "#/definitions/Frequency"
         },
-        "preferredSource": {
+        "source": {
           "$ref": "#/definitions/PriceSource"
         }
       },
@@ -430,8 +307,7 @@
         "dateFrom",
         "dateTo",
         "frequency",
-        "preferredSource",
-        "fallbackOrder",
+        "source",
         "basis",
         "unit"
       ],
@@ -466,11 +342,8 @@
         "frequency": {
           "$ref": "#/definitions/Frequency"
         },
-        "preferredSource": {
+        "source": {
           "$ref": "#/definitions/PriceSource"
-        },
-        "fallbackOrder": {
-          "$ref": "#/definitions/SourceFallbackOrder"
         },
         "basis": {
           "$ref": "#/definitions/PriceBasis"
@@ -549,7 +422,7 @@
           "$ref": "#/definitions/PricePeriod"
         },
         "source": {
-          "$ref": "#/definitions/SourceSummary"
+          "$ref": "#/definitions/PriceSource"
         },
         "missingReason": {
           "type": "string",
@@ -614,83 +487,6 @@
           ]
         }
       ]
-    },
-    "Coverage": {
-      "required": [
-        "region",
-        "fuelType",
-        "frequency",
-        "firstAvailableDate",
-        "lastAvailableDate",
-        "observationCount"
-      ],
-      "type": "object",
-      "properties": {
-        "region": {
-          "$ref": "#/definitions/RegionRef"
-        },
-        "fuelType": {
-          "$ref": "#/definitions/FuelTypeRef"
-        },
-        "frequency": {
-          "$ref": "#/definitions/Frequency"
-        },
-        "firstAvailableDate": {
-          "type": "string",
-          "format": "date",
-          "nullable": true
-        },
-        "lastAvailableDate": {
-          "type": "string",
-          "format": "date",
-          "nullable": true
-        },
-        "observationCount": {
-          "type": "integer",
-          "format": "int32",
-          "minimum": 0
-        },
-        "latestSource": {
-          "$ref": "#/definitions/PriceSource"
-        }
-      },
-      "additionalProperties": false
-    },
-    "CoverageList": {
-      "required": [
-        "meta",
-        "basis",
-        "preferredSource",
-        "fallbackOrder",
-        "data",
-        "sourceUpdates"
-      ],
-      "type": "object",
-      "properties": {
-        "meta": {
-          "$ref": "#/definitions/ApiMeta"
-        },
-        "basis": {
-          "$ref": "#/definitions/PriceBasis"
-        },
-        "preferredSource": {
-          "$ref": "#/definitions/PriceSource"
-        },
-        "fallbackOrder": {
-          "$ref": "#/definitions/SourceFallbackOrder"
-        },
-        "data": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/Coverage"
-          },
-          "minItems": 2,
-          "maxItems": 36
-        },
-        "sourceUpdates": {
-          "$ref": "#/definitions/SourceUpdates"
-        }
-      }
     },
     "PriceChange": {
       "required": [
@@ -1008,17 +804,9 @@
         "unit",
         "price",
         "latestAvailableDate",
-        "publisher",
-        "providerUrl",
-        "datasetId",
-        "publicationId",
+        "provider",
         "publicationDate",
-        "publishedAt",
-        "loadedAt",
-        "publicationUrl",
-        "attribution",
-        "methodologyUrl",
-        "note"
+        "loadedAt"
       ],
       "type": "object",
       "properties": {
@@ -1045,52 +833,17 @@
           "format": "date",
           "nullable": true
         },
-        "publisher": {
-          "$ref": "#/definitions/SourceRef"
-        },
-        "providerUrl": {
-          "type": "string",
-          "format": "uri",
-          "nullable": true
-        },
-        "datasetId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "publicationId": {
-          "type": "string",
-          "nullable": true
-        },
         "publicationDate": {
           "type": "string",
           "format": "date",
-          "nullable": true
-        },
-        "publishedAt": {
-          "type": "string",
-          "format": "date-time",
           "nullable": true
         },
         "loadedAt": {
           "type": "string",
           "format": "date-time"
         },
-        "publicationUrl": {
-          "type": "string",
-          "format": "uri",
-          "nullable": true
-        },
-        "attribution": {
-          "type": "string"
-        },
-        "methodologyUrl": {
-          "type": "string",
-          "format": "uri",
-          "nullable": true
-        },
-        "note": {
-          "type": "string",
-          "nullable": true
+        "provider": {
+          "$ref": "#/definitions/SourceRef"
         }
       },
       "additionalProperties": false
@@ -1114,6 +867,37 @@
         }
       }
     },
+    "RefuelingSelection": {
+      "required": [
+        "baseRegionCode",
+        "regionCodes",
+        "fuelType",
+        "date"
+      ],
+      "type": "object",
+      "properties": {
+        "baseRegionCode": {
+          "$ref": "#/definitions/RegionCode"
+        },
+        "regionCodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/RegionCode"
+          }
+        },
+        "fuelType": {
+          "$ref": "#/definitions/FuelType"
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "additionalProperties": false
+    },
     "RefuelingCalculateRequest": {
       "required": [
         "selection",
@@ -1122,13 +906,22 @@
       "type": "object",
       "properties": {
         "selection": {
-          "$ref": "#/definitions/PriceSelection"
+          "$ref": "#/definitions/RefuelingSelection"
         },
         "volumeLiters": {
           "$ref": "#/definitions/VolumeLiters"
         },
-        "expectedSnapshotId": {
-          "$ref": "#/definitions/SnapshotId"
+        "expectedSnapshotIds": {
+          "type": "object",
+          "properties": {
+            "OFFICIAL": {
+              "$ref": "#/definitions/SnapshotId"
+            },
+            "MARKET": {
+              "$ref": "#/definitions/SnapshotId"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -1208,24 +1001,62 @@
         }
       ]
     },
+    "RefuelingSourceCalculation": {
+      "required": [
+        "context",
+        "status",
+        "baseTotalRub",
+        "snapshotChanged",
+        "comparison"
+      ],
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/definitions/PriceContext"
+        },
+        "status": {
+          "$ref": "#/definitions/ComparisonStatus"
+        },
+        "baseTotalRub": {
+          "type": "string",
+          "nullable": true,
+          "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{2}$"
+        },
+        "snapshotChanged": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "comparison": {
+          "type": "object",
+          "nullable": true,
+          "oneOf": [
+            {
+              "$ref": "#/definitions/RefuelingComparison"
+            },
+            {
+              "type": "object",
+              "nullable": true,
+              "enum": [
+                null
+              ]
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "RefuelingCalculation": {
       "required": [
         "meta",
-        "context",
         "volumeLiters",
         "currency",
-        "baseTotalRub",
-        "snapshotChanged",
-        "comparison",
+        "results",
         "sourceUpdates"
       ],
       "type": "object",
       "properties": {
         "meta": {
           "$ref": "#/definitions/ApiMeta"
-        },
-        "context": {
-          "$ref": "#/definitions/PriceContext"
         },
         "volumeLiters": {
           "$ref": "#/definitions/VolumeLiters"
@@ -1236,20 +1067,19 @@
             "RUB"
           ]
         },
-        "baseTotalRub": {
-          "$ref": "#/definitions/Money"
-        },
-        "snapshotChanged": {
-          "type": "boolean",
-          "nullable": true
-        },
-        "comparison": {
-          "$ref": "#/definitions/RefuelingComparison"
+        "results": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/definitions/RefuelingSourceCalculation"
+          }
         },
         "sourceUpdates": {
           "$ref": "#/definitions/SourceUpdates"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "ErrorDetail": {
       "required": [
@@ -1289,7 +1119,6 @@
             "InvalidInput",
             "ResourceNotFound",
             "DataVersionChanged",
-            "CalculationUnavailable",
             "InternalError",
             "ServiceUnavailable"
           ]

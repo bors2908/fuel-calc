@@ -29,7 +29,6 @@ class ApiContractAssertions {
                 status >= 400 -> "ErrorResponse"
                 path == "/api/v1/regions" -> "RegionList"
                 path == "/api/v1/fuel-types" -> "FuelTypeList"
-                path.endsWith("/coverage") -> "CoverageList"
                 path.endsWith("/overview") -> "PriceOverview"
                 path.endsWith("/trend") -> "PriceTrend"
                 path.endsWith("/comparison") -> "PriceComparison"
@@ -60,7 +59,7 @@ class ApiContractAssertions {
 
         val enumeration = schema["enum"] as? List<*>
 
-        if (enumeration != null && value.asString() !in enumeration) {
+        if (enumeration != null && (!value.isValueNode || value.asString() !in enumeration)) {
             return "$path: unexpected enum $value"
         }
 

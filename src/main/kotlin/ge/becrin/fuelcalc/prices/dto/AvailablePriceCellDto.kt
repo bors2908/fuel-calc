@@ -1,7 +1,7 @@
 package ge.becrin.fuelcalc.prices.dto
 
 import ge.becrin.fuelcalc.prices.MissingPriceReason
-import ge.becrin.fuelcalc.sources.dto.SourceSummaryDto
+import ge.becrin.fuelcalc.sources.PriceSource
 
 data class AvailablePriceCellDto(
     override val priceRubPerLiter: String,
@@ -10,7 +10,7 @@ data class AvailablePriceCellDto(
 
     override val period: PricePeriodDto,
 
-    override val source: SourceSummaryDto
+    override val source: PriceSource
 ) : PriceCellDto {
     override val missingReason: MissingPriceReason? = null
 }

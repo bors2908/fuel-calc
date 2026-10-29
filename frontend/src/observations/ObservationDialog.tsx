@@ -1,3 +1,4 @@
+import { regionName } from "../regions/regionName";
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "../api/client";
 import type { Schema } from "../api/types";
@@ -5,8 +6,8 @@ import { Feedback, Loading } from "../ui/Feedback";
 import { date, safeLink, timestamp } from "../ui/format";
 import { PriceValue } from "../prices/PriceValue";
 
-type Props = { id: string; preferredSource: Schema<"PriceSource">; onClose: () => void };
-export function ObservationDialog({ id, preferredSource, onClose }: Props) {
+type Props = { id: string; onClose: () => void };
+export function ObservationDialog({ id, onClose }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{
@@ -76,53 +77,30 @@ export function ObservationDialog({ id, preferredSource, onClose }: Props) {
       {observation && (
         <>
           <p>
-            {observation.region.name} · {observation.fuelType.name}
+            {regionName(observation.region)} · {observation.fuelType.name}
           </p>
-          <PriceValue
-            price={observation.price}
-            preferredSource={preferredSource}
-          />
+          <PriceValue price={observation.price} />
           <dl className="provenance-list">
             <dt>Дата наблюдения</dt>
             <dd>{date(observation.price.period.referenceDate)}</dd>
             <dt>Дата публикации</dt>
             <dd>{date(observation.publicationDate)}</dd>
-            <dt>Время публикации</dt>
-            <dd>{timestamp(observation.publishedAt)}</dd>
             <dt>Загружено в архив</dt>
             <dd>{timestamp(observation.loadedAt)}</dd>
-            <dt>Производитель данных</dt>
-            <dd>{observation.publisher.name}</dd>
-            <dt>Канал получения</dt>
-            <dd>{observation.price.source.provider.name}</dd>
-            <dt>Методика</dt>
-            <dd>
-              {observation.price.source.aggregationMethod === "OFFICIAL_STATISTICS"
-                ? "Официальная статистика"
-                : "Среднее замеров регионального индекса BenzUp"}
-            </dd>
+            <dt>Поставщик данных</dt>
+            <dd>{observation.provider.name}</dd>
+            <dt>Последнее доступное наблюдение</dt>
+            <dd>{date(observation.latestAvailableDate)}</dd>
           </dl>
-          <p>{observation.attribution}</p>
-          {observation.note && <p>{observation.note}</p>}
-          <div className="publication-links">
-            {[
-              { name: "Публикация", url: observation.publicationUrl },
-              { name: "Производитель", url: observation.publisher.url },
-              { name: "Канал получения", url: observation.providerUrl },
-              { name: "Методика", url: observation.methodologyUrl },
-            ].map((link) =>
-              safeLink(link.url) ? (
-                <a
-                  key={link.name}
-                  href={safeLink(link.url)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {link.name} ↗
-                </a>
-              ) : null,
-            )}
-          </div>
+          {safeLink(observation.provider.url) && (
+            <a
+              href={safeLink(observation.provider.url)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Первоисточник ↗
+            </a>
+          )}
           <p className="muted">
             Даты наблюдения, публикации и загрузки имеют разный смысл. Неизвестная дата не
             заменяется датой загрузки.

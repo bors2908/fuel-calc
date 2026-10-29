@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: fuel-calc
   datasource:
@@ -32,36 +34,31 @@ imports:
   enabled: ${IMPORTS_ENABLED:true}
   fetch-on-startup: ${FETCH_ON_STARTUP:true}
   time-zone: ${IMPORTS_TIME_ZONE:Europe/Moscow}
-  history-from: 2026-01-01
-  history-windows-per-run: 2
-  reconciliation-interval: P7D
-  batch-size: 500
   connect-timeout: ${SOURCE_CONNECT_TIMEOUT:PT10S}
   request-timeout: PT30S
   max-response-bytes: 33554432
-  max-run-duration: PT10M
+  max-run-duration: PT30M
+  regions:
+    okato-endpoint: ${OKATO_ENDPOINT:https://showdata.rosstat.gov.ru/backbone/set/13032}
+    selection-endpoint: ${REGION_SELECTION_ENDPOINT:https://showdata.rosstat.gov.ru/backbone/set/304297}
+    cron: "${REGION_CATALOG_CRON:0 0 3 * * MON}"
   rosstat:
-    enabled: ${ROSSTAT_ENABLED:true}
-    fetch-on-startup: ${ROSSTAT_FETCH_ON_STARTUP:true}
-    cron: "${ROSSTAT_CRON:0 0 */6 * * *}"
+    base-url: ${ROSSTAT_BASE_URL:https://showdata.rosstat.gov.ru}
+    indicator-id: 274422
+    goods-set-id: 108929
+    start-date: ${ROSSTAT_START_DATE:2026-01-01}
+    cron: "${ROSSTAT_CRON:0 0 0 * * *}"
     ignore-tls-errors: ${ROSSTAT_IGNORE_TLS_ERRORS:true}
     request-timeout: PT2M
-    monthly-interval: PT24H
-    weekly-catalog: https://rosstat.gov.ru/compendium/document/50798
-    monthly-catalog: https://rosstat.gov.ru/statistics/price
   rustata:
-    enabled: ${RUSTATA_ENABLED:true}
-    fetch-on-startup: ${RUSTATA_FETCH_ON_STARTUP:true}
-    cron: "${RUSTATA_CRON:0 30 */6 * * *}"
-    monthly-interval: PT24H
-    base-url: https://rustata.ru
+    base-url: ${RUSTATA_BASE_URL:https://rustata.ru}
+    dataset: fedstat/indicator_37426
+    start-date: ${RUSTATA_START_DATE:2026-01-01}
     token: ${RUSTATA_TOKEN:}
     request-interval: PT6S
     page-size: 300
-    max-pages: 10
+    max-pages: 20
   benzup:
-    enabled: ${BENZUP_ENABLED:true}
-    fetch-on-startup: ${BENZUP_FETCH_ON_STARTUP:true}
-    cron: "${BENZUP_CRON:0 15 0,6,12,18 * * *}"
+    cron: "${BENZUP_CRON:0 0 12 * * *}"
     endpoint: ${BENZUP_ENDPOINT:https://api.omt-consult.ru/index/regional}
     token: ${BENZUP_TOKEN:}

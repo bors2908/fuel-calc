@@ -1,73 +1,140 @@
+import { regionName } from "../regions/regionName";
 import type { Schema } from "../api/types";
 import { number, signed, date } from "../ui/format";
+import type { Block } from "./load";
 import { PriceValue } from "./PriceValue";
+import { Feedback } from "../ui/Feedback";
 
 export function Overview({
   value,
+  official,
+  showComparison,
   onObservation,
+  onRetry,
 }: {
-  value: Schema<"PriceOverview">;
+  value: Block<Schema<"PriceOverview">>;
+  official: Block<Schema<"PriceOverview">>;
+  showComparison: boolean;
   onObservation: (id: string) => void;
+  onRetry: () => void;
 }) {
-  const comparison = value.comparison;
   return (
     <section
       className="overview"
       aria-label="Сводка цен"
     >
-      <div className="overview-primary">
-        <p className="overview-label">
-          {value.context.fuelType.name} · {value.context.baseRegion.name}
-        </p>
+      <div
+        data-source="OFFICIAL"
+        aria-label="Официальная сводка"
+      >
+        <p className="overview-label">Официальная цена · Росстат</p>
+        {official.value ? (
+          <SourceSummary
+            value={official.value}
+            showComparison={showComparison}
+            onObservation={onObservation}
+          />
+        ) : (
+          <div className="overview-price">
+            <Feedback onRetry={onRetry}>Не удалось загрузить официальную сводку.</Feedback>
+          </div>
+        )}
+      </div>
+      <div
+        data-source="MARKET"
+        aria-label="Рыночная сводка"
+      >
+        <p className="overview-label">Рыночная цена · BenzUp</p>
+        {value.value ? (
+          <SourceSummary
+            value={value.value}
+            showComparison={showComparison}
+            onObservation={onObservation}
+          />
+        ) : (
+          <div className="overview-price">
+            <Feedback onRetry={onRetry}>
+              Не удалось загрузить рыночную сводку. Официальные данные остаются доступны.
+            </Feedback>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function SourceSummary({
+  value,
+  showComparison,
+  onObservation,
+}: {
+  value: Schema<"PriceOverview">;
+  showComparison: boolean;
+  onObservation: (id: string) => void;
+}) {
+  const comparison = value.comparison;
+  return (
+    <>
+      <div className="overview-price">
         <PriceValue
           price={value.latestPrice}
-          preferredSource={value.context.preferredSource}
           onObservation={onObservation}
         />
         {value.latestPrice.priceRubPerLiter === null && (
           <p className="muted">
-            Последнее наблюдение архива: {date(value.latestAvailableDate)}. Попробуйте другой
-            период.
+            {value.latestAvailableDate
+              ? `Последнее наблюдение: ${date(value.latestAvailableDate)}. Измените период.`
+              : "Наблюдений этого источника пока нет."}
           </p>
         )}
       </div>
-      <div>
-        <p className="overview-label">Изменение за период</p>
-        <strong className={value.change.percent !== null ? "stat-value" : "stat-message"}>
-          {value.change.percent !== null
-            ? `${signed(value.change.percent)}%`
-            : "Недостаточно данных"}
-        </strong>
-        <p className="muted">
-          {value.change.absoluteRubPerLiter !== null
-            ? `${signed(value.change.absoluteRubPerLiter)} ₽/л`
-            : "Нужно не меньше двух наблюдений"}
-          {value.change.status === "ZERO_BASE" && " · начальная цена равна нулю"}
-        </p>
-        {value.change.startPrice.period && (
-          <small>С {date(value.change.startPrice.period.referenceDate)}</small>
-        )}
-      </div>
-      <div>
-        <p className="overview-label">Ниже среди выбранных</p>
-        {comparison.lowestPriceRubPerLiter !== null ? (
-          <>
-            <strong className="stat-value">
-              {number(comparison.lowestPriceRubPerLiter)} <small>₽/л</small>
+      <div className="overview-stats">
+        <div>
+          <p className="overview-label">Изменение за период</p>
+          <div className="overview-stat-value">
+            <strong className={value.change.percent !== null ? "stat-value" : "stat-message"}>
+              {value.change.percent !== null
+                ? `${signed(value.change.percent)}%`
+                : "Недостаточно данных"}
             </strong>
-            <p className="overview-description">
-              {comparison.lowestRegions.map((region) => region.name).join(", ")}
-            </p>
-            <small>Общий период: {comparison.period?.label ?? "—"}</small>
-          </>
-        ) : (
+          </div>
           <p className="muted">
-            {comparison.status === "SINGLE_REGION"
-              ? "Добавьте регион, чтобы сравнить цены."
-              : "Нет общего периода для сравнения."}
+            {value.change.absoluteRubPerLiter !== null
+              ? `${signed(value.change.absoluteRubPerLiter)} ₽/л`
+              : "Нужно не меньше двух наблюдений"}
+            {value.change.status === "ZERO_BASE" && " · начальная цена равна нулю"}
           </p>
+          <small>
+            {value.change.startPrice.period
+              ? `С ${date(value.change.startPrice.period.referenceDate)}`
+              : null}
+          </small>
+        </div>
+        {showComparison && (
+          <div>
+            <p className="overview-label">Ниже среди выбранных</p>
+            <div className="overview-stat-value">
+              {comparison.lowestPriceRubPerLiter !== null ? (
+                <strong className="stat-value">
+                  {number(comparison.lowestPriceRubPerLiter)} <small>₽/л</small>
+                </strong>
+              ) : (
+                <span className="stat-message">Нет сопоставимой цены</span>
+              )}
+            </div>
+            <p className="overview-description">
+              {comparison.lowestPriceRubPerLiter !== null
+                ? comparison.lowestRegions.map(regionName).join(", ")
+                : comparison.status === "SINGLE_REGION"
+                  ? "Добавьте регион, чтобы сравнить цены."
+                  : "Нет общего периода для сравнения."}
+            </p>
+            <small>
+              {comparison.period ? `Общая дата: ${date(comparison.period.referenceDate)}` : null}
+            </small>
+          </div>
         )}
       </div>
-    </section>
+    </>
   );
 }

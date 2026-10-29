@@ -22,9 +22,7 @@ data class PriceContextDto(
 
     val frequency: PriceFrequency,
 
-    val preferredSource: PriceSource,
-
-    val fallbackOrder: List<PriceSource>,
+    val source: PriceSource,
 
     val basis: PriceBasis,
 

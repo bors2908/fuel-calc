@@ -19,5 +19,5 @@ data class PriceSelection(
 
     val frequency: PriceFrequency,
 
-    val preferred: PriceSource
+    val source: PriceSource
 )

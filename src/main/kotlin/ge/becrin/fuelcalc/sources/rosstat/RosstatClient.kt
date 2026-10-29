@@ -1,18 +1,19 @@
 package ge.becrin.fuelcalc.sources.rosstat
 
-import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.fuels.FuelType
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.model.FeedDefinition
 import ge.becrin.fuelcalc.sources.model.FetchWindow
-import ge.becrin.fuelcalc.sources.model.PreparedPublication
-import ge.becrin.fuelcalc.sources.service.RegionalSourceAdapter
+import ge.becrin.fuelcalc.sources.model.FetchedPrice
+import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.SourceHttpClient
-import ge.becrin.fuelcalc.sources.service.SourceImportException
-import org.jsoup.Jsoup
 import org.springframework.stereotype.Component
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
 import java.net.URI
+import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 @Component
 class RosstatClient(
@@ -20,79 +21,138 @@ class RosstatClient(
 
     private val properties: ImportProperties,
 
-    private val weekly: RosstatWeeklyParser,
+    private val catalog: RegionCatalog
+) {
+    private val json = JsonMapper.builder().build()
 
-    private val monthly: RosstatMonthlyParser,
+    fun fetch(window: FetchWindow): List<FetchedPrice> {
+        // The public report API uses the same CSRF session as the report builder; its page body is discarded.
+        http.read(endpoint("/olap2/descr/report/${properties.rosstat.indicatorId}/")) { }
 
-    private val documents: RosstatCatalogParser
-) : RegionalSourceAdapter {
-    override val provider: String = "ROSSTAT"
+        val config = http.json(endpoint("/olap2/olap2-descriptor-report/${properties.rosstat.indicatorId}/")) as ObjectNode
+        val territories = http.json(URI.create(properties.regions.okatoEndpoint))
+        val goods = http.json(endpoint("/backbone/set/${properties.rosstat.goodsSetId}"))
 
-    override val enabled: Boolean
-        get() = properties.rosstat.enabled
+        require(territories.isArray && goods.isArray) { "Invalid Rosstat dictionaries" }
 
-    private val parsedFiles = mutableMapOf<String, List<PreparedPublication>>()
+        val selectedCodes = catalog.regions.map { it.okatoCode }.toSet()
+        val regionById = territories.filter { it.path("-17006").asString() in selectedCodes }
+            .associate { it.path("id").asLong() to it.path("-17006").asString() }
+        val fuelById = FuelType.entries.associate { fuel ->
+            val matches = goods.filter { it.path("-17006").asString() == fuel.rosstatCode }
 
-    override fun beginRun() {
-        http.beginRun()
-        parsedFiles.clear()
-    }
+            require(matches.size == 1) { "Missing or ambiguous Rosstat fuel code [code=${fuel.rosstatCode}]" }
 
-    override fun definition(frequency: PriceFrequency): FeedDefinition =
-        FeedDefinition(
-            "ROSSTAT_${frequency}_V1", provider, provider, frequency,
-            if (frequency == PriceFrequency.WEEKLY) properties.rosstat.weeklyCatalog else properties.rosstat.monthlyCatalog
+            matches.single().path("id").asLong() to fuel
+        }
+
+        require(regionById.values.toSet() == selectedCodes) { "Selected territories absent from Rosstat dictionary" }
+
+        val dates = mutableListOf<String>()
+        var date = window.from.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY))
+
+        while (date <= window.until) {
+            dates.add("$date 00:00:00|-58")
+
+            date = date.plusWeeks(1)
+        }
+
+        if (dates.isEmpty()) {
+            return emptyList()
+        }
+
+        configure(config.path("row_header"), 13033, regionById.keys.toList())
+        configure(config.path("row_header"), 108930, fuelById.keys.toList())
+        configure(config.path("col_header"), -64, dates)
+        normalize(config.path("row_header"))
+        normalize(config.path("col_header"))
+        normalize(config.path("filter"))
+        config.put("headers_url", "/olap2/olap2-preview/headers")
+        config.put("data_url", "/olap2/olap2-preview/data")
+        config.put("preview_url", "/olap2/olap2-preview/")
+        config.put("repo_registry", true)
+
+        val response = http.json(
+            endpoint("/olap2/olap2-preview/"),
+            mapOf("jkwargs" to json.writeValueAsString(config), "user_conf" to "{}")
         )
+        val rows = response.path("headers").path("rowFilters")
+        val columns = response.path("headers").path("colFilters")
+        val data = response.path("data").path("reportData").path("data")
 
-    override fun fetch(
-        feed: FeedDefinition,
-        window: FetchWindow
-    ): List<PreparedPublication> {
-        val catalogUri = URI.create(feed.externalCode)
-        val catalog = http.read(catalogUri) { Jsoup.parse(it.toFile(), null, catalogUri.toString()) }
-        val links = documents.links(catalog, feed.frequency)
-
-        if (links.isEmpty()) {
-            throw SourceImportException(
-                "EMPTY_CATALOG", "No compatible Rosstat documents found [frequency=${feed.frequency}, pageTitle=${catalog.title()}]"
-            )
+        require(rows.isArray && columns.isArray && data.isArray && rows.size() == data.size()) {
+            "Invalid Rosstat report dimensions"
         }
 
-        val selected = links.filter { link ->
-            val text = link.title
-            val years = Regex("20\\d{2}").findAll(text).map { it.value.toInt() }.toList()
-            years.any { it in window.from.year..window.until.year } &&
-                (feed.frequency != PriceFrequency.WEEKLY ||
-                    runCatching { weekly.period(text).referenceDate in window.from..window.until }.getOrDefault(true))
-        }
-        val result = mutableListOf<PreparedPublication>()
+        val result = mutableListOf<FetchedPrice>()
 
-        for (link in selected) {
-            val uri = link.uri
-            require(uri.host == catalogUri.host) { "Rosstat link points outside configured host" }
-            val published = Regex("(\\d{2})[-.](\\d{2})[-.](20\\d{2})").find(uri.path)?.value
-                ?.replace('-', '.')?.let { LocalDate.parse(it, PUBLICATION_DATE) }
-            val publications = parsedFiles.getOrPut(uri.toString()) {
-                http.read(uri) { path ->
-                    if (feed.frequency == PriceFrequency.WEEKLY) {
-                        listOf(weekly.parse(Jsoup.parse(path.toFile(), null, uri.toString()), uri.toString(), published))
-                    } else {
-                        monthly.parse(path, uri.toString(), null)
-                    }
+        for ((rowIndex, filters) in rows.withIndex()) {
+            val region = regionById.getValue(filter(filters, "13033").toLong())
+            val fuel = fuelById.getValue(filter(filters, "108930").toLong())
+            val values = data.path(rowIndex)
+
+            require(values.isArray && values.size() == columns.size()) { "Invalid Rosstat report row" }
+
+            for ((columnIndex, column) in columns.withIndex()) {
+                val referenceDate = LocalDate.parse(filter(column, "-64").substringBefore(' '))
+                val value = values.path(columnIndex).path("db_value")
+
+                require(referenceDate in window.from..window.until) { "Rosstat returned a period outside requested window" }
+
+                if (!value.isMissingNode && !value.isNull) {
+                    val price = value.asString().toBigDecimalOrNull()
+
+                    require(price != null && price.signum() > 0) { "Invalid Rosstat price" }
+
+                    result.add(FetchedPrice(region, fuel, referenceDate, price))
                 }
             }
-
-            result.addAll(publications.filter { it.period.referenceDate in window.from..window.until })
-        }
-
-        if (selected.isEmpty()) {
-            throw SourceImportException("MISSING_HISTORY", "Rosstat catalog does not cover the requested years")
         }
 
         return result
     }
 
-    companion object {
-        private val PUBLICATION_DATE = DateTimeFormatter.ofPattern("dd.MM.uuuu")
+    private fun endpoint(path: String): URI =
+        URI.create(properties.rosstat.baseUrl.trimEnd('/') + path)
+
+    private fun filter(
+        filters: JsonNode,
+        descriptor: String
+    ): String =
+        filters.toList().map { it.asString() }.single { it.startsWith("$descriptor#eq#") }.substringAfter("#eq#")
+
+    private fun configure(
+        nodes: JsonNode,
+        descriptor: Long,
+        values: List<Any>
+    ) {
+        var found = false
+
+        fun visit(items: JsonNode) {
+            for (item in items) {
+                if (item.path("descriptor").asLong() == descriptor) {
+                    (item as ObjectNode).set("values", json.valueToTree(values))
+                    found = true
+                }
+
+                visit(item.path("children"))
+            }
+        }
+
+        visit(nodes)
+
+        require(found) { "Required Rosstat dimension absent [descriptor=$descriptor]" }
+    }
+
+    private fun normalize(nodes: JsonNode) {
+        for (node in nodes) {
+            val descriptor = node.path("descriptor")
+
+            if (descriptor.isNumber) {
+                (node as ObjectNode).set("descriptor", json.createArrayNode().add(descriptor.asLong()))
+            }
+
+            normalize(node.path("children"))
+        }
     }
 }

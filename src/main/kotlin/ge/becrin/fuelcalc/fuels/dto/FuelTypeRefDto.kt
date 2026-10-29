@@ -5,5 +5,7 @@ import ge.becrin.fuelcalc.fuels.FuelType
 data class FuelTypeRefDto(
     val code: FuelType,
 
-    val name: String
+    val name: String = code.displayName,
+
+    val rosstatCode: String = code.rosstatCode
 )

@@ -39,9 +39,6 @@ export function errorMessage(error: unknown): string {
     if (error.status === 409) {
       return "Данные обновляются. Повторите загрузку.";
     }
-    if (error.status === 422) {
-      return "Нет сопоставимых цен для расчёта. Измените регионы или период.";
-    }
     if (error.status === 400) {
       return "Проверьте регионы, даты и объём. Выбор не принят сервисом.";
     }
@@ -84,7 +81,7 @@ export function selectionQuery(selection: Selection, version?: string): URLSearc
     filterDateFrom: selection.dateFrom,
     filterDateTo: selection.dateTo,
     frequency: selection.frequency,
-    preferredSource: selection.preferredSource,
+    source: selection.source,
   });
   if (version) {
     query.set("dataVersion", version);
@@ -105,12 +102,6 @@ export const api = {
     query.set("sortOrder", sorting.sortOrder);
     return request("PriceComparison", `fuel-prices/comparison?${query}`, signal);
   },
-  coverage: (selection: Selection, signal: AbortSignal, version: string) =>
-    request(
-      "CoverageList",
-      `fuel-prices/coverage?${new URLSearchParams({ filterRegionCode: selection.regionCodes.join(","), filterFuelType: selection.fuelType, preferredSource: selection.preferredSource, dataVersion: version })}`,
-      signal,
-    ),
   observation: (id: string, signal: AbortSignal) =>
     request(
       "PriceObservationResponse",

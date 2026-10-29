@@ -31,7 +31,7 @@ open class FuelPriceQueryDto {
     var frequency: PriceFrequency? = null
 
     @field:NotNull
-    var preferredSource: PriceSource? = null
+    var source: PriceSource? = null
 
     @field:Size(min = 1, max = 128)
     var dataVersion: String? = null

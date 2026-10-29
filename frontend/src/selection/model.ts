@@ -5,6 +5,8 @@ export type Catalog = {
   fuels: Schema<"FuelTypeRef">[];
   serverDate: string;
 };
+export type DateMode = "range" | "date";
+const defaultPeriodMonths = 3;
 export function presetRange(
   serverDate: string,
   months: number,
@@ -22,10 +24,15 @@ export function defaults(serverDate: string): Selection {
     baseRegionCode: "",
     regionCodes: [],
     fuelType: "DIESEL",
-    frequency: "WEEKLY",
-    preferredSource: "ROSSTAT",
-    ...presetRange(serverDate, 3),
+    frequency: "DAILY",
+    source: "MARKET",
+    ...presetRange(serverDate, defaultPeriodMonths),
   };
+}
+export function withDefaultRange(value: Selection): Selection {
+  return validDate(value.dateTo)
+    ? { ...value, ...presetRange(value.dateTo, defaultPeriodMonths) }
+    : value;
 }
 export function selectionKey(value: Selection): string {
   return JSON.stringify([
@@ -33,18 +40,18 @@ export function selectionKey(value: Selection): string {
     [...value.regionCodes].sort(),
     value.fuelType,
     value.frequency,
-    value.preferredSource,
+    value.source,
     value.dateFrom,
     value.dateTo,
   ]);
 }
 export function fromContext(value: PriceContext): Selection {
   return {
-    baseRegionCode: value.baseRegion.code,
-    regionCodes: value.regions.map((r) => r.code),
+    baseRegionCode: value.baseRegion.okatoCode,
+    regionCodes: value.regions.map((r) => r.okatoCode),
     fuelType: value.fuelType.code,
     frequency: value.frequency,
-    preferredSource: value.preferredSource,
+    source: value.source,
     dateFrom: value.dateFrom,
     dateTo: value.dateTo,
   };
@@ -56,7 +63,11 @@ function validDate(value: string): boolean {
     new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
   );
 }
-export function selectionError(value: Selection, catalog: Catalog): string | null {
+export function selectionError(
+  value: Selection,
+  catalog: Catalog,
+  dateMode: DateMode = "range",
+): string | null {
   if (!value.baseRegionCode || !value.regionCodes.includes(value.baseRegionCode)) {
     return "Выберите основной регион.";
   }
@@ -66,7 +77,9 @@ export function selectionError(value: Selection, catalog: Catalog): string | nul
   ) {
     return "Выберите не более четырёх разных регионов.";
   }
-  if (value.regionCodes.some((code) => !catalog.regions.some((region) => region.code === code))) {
+  if (
+    value.regionCodes.some((code) => !catalog.regions.some((region) => region.okatoCode === code))
+  ) {
     return "Регион из ссылки не найден. Выберите регион из списка.";
   }
   if (!catalog.fuels.some((fuel) => fuel.code === value.fuelType)) {
@@ -78,11 +91,16 @@ export function selectionError(value: Selection, catalog: Catalog): string | nul
     value.dateFrom > value.dateTo ||
     value.dateTo > catalog.serverDate
   ) {
-    return "Укажите корректный период без будущих дат.";
+    return dateMode === "date"
+      ? "Укажите корректную дату не позднее сегодняшней."
+      : "Укажите корректный период без будущих дат.";
   }
   return null;
 }
-export function readSelection(catalog: Catalog): {
+export function readSelection(
+  catalog: Catalog,
+  dateMode: DateMode = "range",
+): {
   selection: Selection;
   requested: boolean;
   error: string | null;
@@ -95,41 +113,37 @@ export function readSelection(catalog: Catalog): {
     query.get("regions")?.split(",") ?? (value.baseRegionCode ? [value.baseRegionCode] : []);
   value.dateFrom = query.get("from") ?? value.dateFrom;
   value.dateTo = query.get("to") ?? value.dateTo;
+  if (dateMode === "date") {
+    value.dateTo = query.get("date") ?? query.get("to") ?? catalog.serverDate;
+    value.dateFrom = value.dateTo;
+  }
   const fuel = query.get("fuel");
-  const frequency = query.get("frequency");
-  const source = query.get("source");
+  const invalidEnum = fuel !== null && !catalog.fuels.some((item) => item.code === fuel);
   if (fuel === "DIESEL" || fuel === "AI_92" || fuel === "AI_95") {
     value.fuelType = fuel;
   }
-  if (frequency === "DAILY" || frequency === "WEEKLY" || frequency === "MONTHLY") {
-    value.frequency = frequency;
-  }
-  if (source === "ROSSTAT" || source === "RUSTATA" || source === "BENZUP") {
-    value.preferredSource = source;
-  }
-  const invalidEnum =
-    (fuel !== null && fuel !== value.fuelType) ||
-    (frequency !== null && frequency !== value.frequency) ||
-    (source !== null && source !== value.preferredSource);
   return {
     selection: value,
     requested,
     error: requested
       ? invalidEnum
         ? "Параметры ссылки не распознаны. Проверьте выбор."
-        : selectionError(value, catalog)
+        : selectionError(value, catalog, dateMode)
       : null,
   };
 }
-export function writeSelection(value: Selection): void {
+export function selectionHref(value: Selection, path: string): string {
   const query = new URLSearchParams({
-    region: value.baseRegionCode,
-    regions: value.regionCodes.join(","),
+    ...(value.baseRegionCode
+      ? { region: value.baseRegionCode, regions: value.regionCodes.join(",") }
+      : {}),
     fuel: value.fuelType,
-    frequency: value.frequency,
-    source: value.preferredSource,
-    from: value.dateFrom,
-    to: value.dateTo,
+    ...(path.replace(/\/$/, "") === "/refueling"
+      ? { date: value.dateTo }
+      : { from: value.dateFrom, to: value.dateTo }),
   });
-  history.pushState(null, "", `${location.pathname}?${query}${location.hash}`);
+  return `${path}?${query}`;
+}
+export function writeSelection(value: Selection): void {
+  history.pushState(null, "", `${selectionHref(value, location.pathname)}${location.hash}`);
 }

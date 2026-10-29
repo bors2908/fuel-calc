@@ -7,5 +7,4 @@ export type PriceContext = Schema<"PriceContext">;
 export type Sorting = { sortBy: Schema<"ComparisonSortBy">; sortOrder: Schema<"SortOrder"> };
 
 export const defaultSorting: Sorting = { sortBy: "PRICE", sortOrder: "ASC" };
-export const sourceNames = { ROSSTAT: "Росстат", RUSTATA: "rustata", BENZUP: "BenzUp" };
-export const frequencyNames = { DAILY: "Дни", WEEKLY: "Недели", MONTHLY: "Месяцы" };
+export const sourceNames = { OFFICIAL: "Официальная цена", MARKET: "Рыночная цена" };

@@ -1,7 +1,8 @@
 package ge.becrin.fuelcalc.sources
 
-enum class PriceSource {
-    ROSSTAT,
-    RUSTATA,
-    BENZUP
+import ge.becrin.fuelcalc.prices.PriceFrequency
+
+enum class PriceSource(val frequency: PriceFrequency) {
+    OFFICIAL(PriceFrequency.WEEKLY),
+    MARKET(PriceFrequency.DAILY)
 }

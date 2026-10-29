@@ -28,7 +28,7 @@ class FuelPriceOverviewService(
         archive.read(input.dataVersion) { meta ->
             val context = contexts.query(input, meta.serverDate)
             val boundaries = query.boundaries(context.selection)
-            val base = boundaries.filter { it.region.code == context.selection.base.code }.sortedBy { it.period.referenceDate }
+            val base = boundaries.filter { it.region.okatoCode == context.selection.base.okatoCode }.sortedBy { it.period.referenceDate }
             val first = base.firstOrNull()
             val last = base.lastOrNull()
             val firstCell = first?.let { cells.available(it) } ?: cells.missing()
@@ -54,7 +54,7 @@ class FuelPriceOverviewService(
                 meta = meta,
                 context = context.dto,
                 latestPrice = lastCell,
-                latestAvailableDate = context.bounds[context.selection.base.code]?.last,
+                latestAvailableDate = context.bounds[context.selection.base.okatoCode]?.last,
                 change = change,
                 comparison = comparisons.summary(resolver.resolve(context.selection, boundaries)),
                 sourceUpdates = context.updates

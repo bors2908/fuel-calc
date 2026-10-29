@@ -1,5 +1,8 @@
+import { regionName } from "../regions/regionName";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { Schema } from "../api/types";
+import { sourceNames } from "../api/types";
 import { date, number, signed } from "../ui/format";
 import { Feedback, Loading } from "../ui/Feedback";
 import { PriceSource } from "../prices/PriceValue";
@@ -13,8 +16,17 @@ type Props = {
   error: string | null;
   onCalculate: (volume: string) => void;
   onChange: () => void;
+  children: ReactNode;
 };
-export function Calculator({ disabled, calculating, result, error, onCalculate, onChange }: Props) {
+export function Calculator({
+  disabled,
+  calculating,
+  result,
+  error,
+  onCalculate,
+  onChange,
+  children,
+}: Props) {
   const [volume, setVolume] = useState("600");
   const [validation, setValidation] = useState<string | null>(null);
   function change(value: string) {
@@ -27,10 +39,13 @@ export function Calculator({ disabled, calculating, result, error, onCalculate, 
       id="calculator"
       className="calculator"
     >
-      <div className="calculator-input">
+      <header className="calculator-heading">
         <p className="eyebrow">От цены за литр — к вашим расходам</p>
         <h2>Сколько стоит ваша заправка</h2>
-        <p>Один объём. Все выбранные регионы.</p>
+        <p>Один объём. Два расчёта: по официальной и рыночной цене.</p>
+      </header>
+      <div className="calculator-filters">{children}</div>
+      <div className="calculator-input">
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -90,7 +105,7 @@ export function Calculator({ disabled, calculating, result, error, onCalculate, 
             {calculating ? "Рассчитываем…" : "Рассчитать"}
           </button>
         </form>
-        {disabled && <p className="volume-hint">Примените фильтры и дождитесь сопоставимых цен.</p>}
+        {disabled && <p className="volume-hint">Выберите регион и корректную дату для расчёта.</p>}
       </div>
       <div
         className="calculation-result"
@@ -99,61 +114,80 @@ export function Calculator({ disabled, calculating, result, error, onCalculate, 
         {calculating && <Loading>Рассчитываем по актуальным ценам…</Loading>}
         {error && <Feedback>{error}</Feedback>}
         {result ? (
-          <>
-            <p>Оценочная стоимость · {result.context.baseRegion.name}</p>
-            <p className="total-value">
-              {number(result.baseTotalRub)} <span>₽</span>
-            </p>
-            <p className="muted">
-              {number(result.volumeLiters)} л · {result.context.fuelType.name} ·{" "}
-              {result.comparison.period?.label ?? date(result.context.dateTo)}
-            </p>
-            {result.snapshotChanged && (
-              <p
-                className="snapshot-notice"
-                role="status"
+          <div className="calculation-sources">
+            {result.results.map((item) => (
+              <section
+                className="source-calculation"
+                key={item.context.source}
+                data-source={item.context.source}
+                aria-label={`Расчёт: ${sourceNames[item.context.source]}`}
               >
-                Цены изменились после просмотра. Расчёт и сравнение обновлены.
-              </p>
-            )}
-            <div>
-              {result.comparison.data.map((row) => (
-                <div
-                  className="calculation-row"
-                  key={row.region.code}
-                >
-                  <strong>
-                    {row.region.name}
-                    {row.relation === "BASE" && " · мой"}
-                  </strong>
-                  <span>{number(row.totalRub)} ₽</span>
-                  <small>
-                    {row.relation === "BASE"
-                      ? "Основной регион"
-                      : row.relation === "EQUAL"
-                        ? "Стоимость одинакова"
-                        : `${signed(row.differenceRub)} ₽ к моему региону`}
-                  </small>
-                  <PriceSource
-                    price={row.price}
-                    preferredSource={result.context.preferredSource}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
+                <h3>{sourceNames[item.context.source]}</h3>
+                <p className="muted">
+                  {regionName(item.context.baseRegion)} · {number(result.volumeLiters)} л
+                </p>
+                {item.baseTotalRub !== null && item.comparison ? (
+                  <>
+                    <p className="total-value">
+                      {number(item.baseTotalRub)} <span>₽</span>
+                    </p>
+                    <p className="muted">
+                      {item.context.fuelType.name} · {date(item.comparison.period?.referenceDate)}
+                    </p>
+                    {item.snapshotChanged && (
+                      <p
+                        className="snapshot-notice"
+                        role="status"
+                      >
+                        Цены изменились после просмотра. Расчёт обновлён.
+                      </p>
+                    )}
+                    {item.comparison.data.map((row) => (
+                      <div
+                        className="calculation-row"
+                        key={row.region.okatoCode}
+                      >
+                        <strong>
+                          {regionName(row.region)}
+                          {row.relation === "BASE" && " · мой"}
+                        </strong>
+                        <span>{number(row.totalRub)} ₽</span>
+                        <small>
+                          {row.relation === "BASE"
+                            ? "Основной регион"
+                            : row.relation === "EQUAL"
+                              ? "Стоимость одинакова"
+                              : `${signed(row.differenceRub)} ₽ к моему региону`}
+                        </small>
+                        <PriceSource price={row.price} />
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <p className="empty-calculation">
+                    {item.status === "NO_COMMON_PERIOD"
+                      ? "Нет общей даты для выбранных регионов. Измените дату заправки или состав регионов."
+                      : "Нет цен для расчёта на выбранную дату или ранее."}
+                  </p>
+                )}
+              </section>
+            ))}
+          </div>
         ) : (
           !calculating &&
           !error && (
             <div className="calculation-placeholder">
               <span aria-hidden="true">↗</span>
-              <h3>Спланируйте расходы</h3>
-              <p>Введите объём, чтобы узнать стоимость и сравнить затраты по выбранным регионам.</p>
+              <h3>Две оценки расходов</h3>
+              <p>
+                Введите объём — покажем стоимость по официальной статистике и рыночному индексу.
+              </p>
             </div>
           )
         )}
         <p className="calculation-disclaimer">
-          Оценка по региональной средней цене. Доставка, скидки и условия поставщика не учтены.
+          Оценки по Росстату и рыночному индексу BenzUp. Даты источников могут различаться.
+          Доставка, скидки и условия поставщика не учтены.
         </p>
       </div>
     </section>

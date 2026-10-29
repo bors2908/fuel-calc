@@ -1,195 +1,166 @@
 package ge.becrin.fuelcalc.sources.jpa
 
 import ge.becrin.fuelcalc.archive.jpa.ArchiveStateRepository
+import ge.becrin.fuelcalc.prices.jpa.FuelPriceEntity
+import ge.becrin.fuelcalc.prices.jpa.FuelPriceRepository
 import ge.becrin.fuelcalc.regions.jpa.RegionEntity
 import ge.becrin.fuelcalc.regions.jpa.RegionRepository
-import ge.becrin.fuelcalc.sources.ImportRunStatus
-import ge.becrin.fuelcalc.sources.PriceAggregationMethod
-import ge.becrin.fuelcalc.sources.SourceUpdateStatus
-import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.model.FeedDefinition
+import ge.becrin.fuelcalc.sources.PriceSource
+import ge.becrin.fuelcalc.sources.SourceProvider
+import ge.becrin.fuelcalc.sources.model.FetchWindow
+import ge.becrin.fuelcalc.sources.model.FetchedPrice
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
-import ge.becrin.fuelcalc.sources.service.SourceImportException
-import jakarta.persistence.EntityManager
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
-import java.time.Instant
 import java.time.LocalDate
 
 @Repository
 class ImportStore(
-    private val entityManager: EntityManager,
-
     private val archive: ArchiveStateRepository,
 
-    private val feeds: SourceFeedRepository,
-
-    private val runs: ImportRunRepository,
-
-    private val states: SourceFetchStateRepository,
+    private val states: ImportStateRepository,
 
     private val regions: RegionRepository,
 
-    private val properties: ImportProperties,
+    private val prices: FuelPriceRepository,
 
     private val clock: Clock
 ) {
-    @Transactional
-    fun initialize(definitions: List<FeedDefinition>) {
-        lockArchive()
-
-        val configured = feeds.findAll().associateBy { it.code }.toMutableMap()
-        val existingStates = states.findAll().map { it.feedId }.toSet()
-
-        for (definition in definitions) {
-            if (definition.code !in configured) {
-                val feed = feeds.save(
-                    SourceFeedEntity(
-                        code = definition.code,
-                        publisher = entityManager.getReference(DataSourceEntity::class.java, definition.publisher),
-                        provider = entityManager.getReference(DataSourceEntity::class.java, definition.provider),
-                        externalCode = definition.externalCode,
-                        frequency = definition.frequency,
-                        aggregationMethod =
-                            if (definition.samplingPolicy == null) PriceAggregationMethod.OFFICIAL_STATISTICS
-                            else PriceAggregationMethod.REGIONAL_INDEX_MEAN,
-                        samplingPolicyCode = definition.samplingPolicy
-                    )
-                )
-
-                configured[feed.code] = feed
-            }
-        }
-
-        for (feed in configured.values) {
-            if (feed.id !in existingStates) {
-                entityManager.persist(SourceFetchStateEntity(feed = feed, updatedAt = now()))
-            }
-        }
-
-        runs.interruptRunning(now())
-    }
-
     @Transactional(readOnly = true)
     fun savedRegions(): List<RegionCatalog.Region> =
-        regions.findAll().sortedBy { it.code }.map { RegionCatalog.Region(it.code, it.name) }
+        regions.findAllOrdered().map { RegionCatalog.Region(it.okatoCode, it.name) }
+
+    @Transactional(readOnly = true)
+    fun fetchedThrough(): LocalDate? =
+        states.findById(PriceSource.OFFICIAL.name).orElse(null)?.fetchedThrough
 
     @Transactional
-    fun synchronizeRegions(catalog: List<RegionCatalog.Region>) {
+    fun synchronizeRegions(
+        catalog: List<RegionCatalog.Region>,
+        hash: String
+    ): Boolean {
         require(catalog.isNotEmpty()) { "Region catalog must not be empty" }
 
-        lockArchive()
+        archive.lockForPublication()
 
-        var changed = false
+        val state = state("REGIONS")
 
-        for (chunk in catalog.chunked(properties.batchSize)) {
-            val existing = regions.findSelected(chunk.map { it.code }).associateBy { it.code }.toMutableMap()
+        if (state.contentHash == hash) {
+            return false
+        }
 
-            for (region in chunk) {
-                val entity = existing[region.code]
+        val incoming = catalog.associateBy { it.okatoCode }
+        val existing = regions.findAll().associateBy { it.okatoCode }
 
-                if (entity == null) {
-                    existing[region.code] = regions.save(RegionEntity(code = region.code, name = region.name, createdAt = now()))
-                    changed = true
-                } else if (entity.name != region.name) {
-                    entity.name = region.name
-                    changed = true
+        prices.deleteOutsideCatalog(incoming.keys)
+        regions.deleteAll(existing.filterKeys { it !in incoming }.values)
+
+        for ((code, entry) in incoming) {
+            val saved = existing[code]
+
+            if (saved == null) {
+                regions.save(RegionEntity(okatoCode = code, name = entry.name))
+            } else if (saved.name != entry.name) {
+                saved.name = entry.name
+            }
+        }
+
+        state.contentHash = hash
+        state.lastSuccessAt = clock.instant()
+        state.errorMessage = null
+        archive.advanceRevision(clock.instant())
+
+        return true
+    }
+
+    @Transactional
+    fun saveWindow(
+        provider: SourceProvider,
+        window: FetchWindow,
+        incoming: List<FetchedPrice>
+    ): Int {
+        val source = provider.source
+
+        require(window.from <= window.until)
+        require(incoming.all { it.date in window.from..window.until && it.price.signum() > 0 })
+
+        val unique = incoming.associateBy { Triple(it.regionCode, it.fuel, it.date) }
+
+        require(unique.size == incoming.size) { "Duplicate prices in source window" }
+
+        archive.lockForPublication()
+
+        val existing = prices.findWindow(source, window.from, window.until)
+            .associateBy { Triple(it.region.okatoCode, it.fuel, it.referenceDate) }
+        val regionCodes = incoming.map { it.regionCode }.distinct()
+        val regionByCode = if (regionCodes.isEmpty()) emptyMap() else regions.findSelected(regionCodes).associateBy { it.okatoCode }
+
+        require(regionByCode.size == regionCodes.size) { "Unmapped price region" }
+
+        var changed = 0
+
+        for ((key, fact) in unique) {
+            val saved = existing[key]
+
+            if (saved == null) {
+                val region = regionByCode.getValue(fact.regionCode)
+
+                prices.save(FuelPriceEntity(
+                    region = region,
+                    fuel = fact.fuel,
+                    source = source,
+                    frequency = source.frequency,
+                    provider = provider,
+                    referenceDate = fact.date,
+                    priceRubPerLiter = fact.price,
+                    publicationDate = fact.publicationDate,
+                    loadedAt = clock.instant()
+                ))
+
+                if (!region.hasData) {
+                    region.hasData = true
+                }
+
+                changed++
+            } else if (saved.publicationDate == null || fact.publicationDate == null || fact.publicationDate >= saved.publicationDate) {
+                if (saved.priceRubPerLiter.compareTo(fact.price) != 0 || saved.provider != provider ||
+                    saved.publicationDate != fact.publicationDate
+                ) {
+                    saved.priceRubPerLiter = fact.price
+                    saved.provider = provider
+                    saved.publicationDate = fact.publicationDate
+                    saved.loadedAt = clock.instant()
+                    changed++
                 }
             }
         }
 
-        if (changed) {
-            bumpRevision()
+        val state = state(source.name)
+        state.fetchedThrough = maxOf(state.fetchedThrough ?: window.until, window.until)
+        state.lastSuccessAt = clock.instant()
+        state.lastAttemptAt = clock.instant()
+        state.errorMessage = null
+
+        if (changed > 0) {
+            archive.advanceRevision(clock.instant())
         }
+
+        return changed
     }
 
     @Transactional
-    fun begin(feed: FeedDefinition): Long? {
-        val state = states.findReady(feed.code, now()) ?: return null
-
-        return runs.save(ImportRunEntity(feed = state.feed, startedAt = now())).id
-    }
-
-    @Transactional
-    fun finish(
-        runId: Long,
-        count: Int,
-        error: SourceImportException?,
-        freshness: String
+    fun failed(
+        source: PriceSource,
+        error: Exception
     ) {
-        lockArchive()
-
-        val run = checkNotNull(runs.findWithFeed(runId))
-        val timestamp = now()
-
-        if (run.status == ImportRunStatus.RUNNING) {
-            run.status = if (error == null) ImportRunStatus.SUCCEEDED else ImportRunStatus.FAILED
-            run.finishedAt = timestamp
-            run.importedCount = count
-            run.errorCode = error?.code
-            run.errorMessage = error?.message
-        }
-
-        run.feed.updateStatus = if (error == null) SourceUpdateStatus.valueOf(freshness) else SourceUpdateStatus.UNAVAILABLE
-
-        if (error == null) {
-            run.feed.lastSuccessAt = timestamp
-        }
-
-        error?.retryAt?.let { retryAt ->
-            for (state in states.findForProvider(run.feed.provider.code)) {
-                state.nextFetchNotBefore = retryAt
-                state.updatedAt = timestamp
-            }
-        }
-
-        bumpRevision()
-    }
-
-    @Transactional(readOnly = true)
-    fun state(feed: FeedDefinition): SourceFetchStateEntity =
-        checkNotNull(states.findByFeedCode(feed.code))
-
-    @Transactional(readOnly = true)
-    fun lastSuccess(feed: FeedDefinition): Instant? =
-        feeds.lastSuccess(feed.code)
-
-    @Transactional
-    fun saveProgress(
-        feed: FeedDefinition,
-        mode: String,
-        next: LocalDate?,
-        until: LocalDate?
-    ) {
-        val state = state(feed)
-        val timestamp = now()
-        state.updatedAt = timestamp
-
-        if (mode == "BACKFILL") {
-            state.backfillNextFrom = next
-            state.backfillUntil = until
-            state.backfillCompletedAt = if (next == null) timestamp else null
-        } else {
-            state.reconciliationNextFrom = next
-            state.reconciliationUntil = until
-
-            if (next == null) {
-                state.lastReconciledAt = timestamp
-            }
-        }
-    }
-
-    @Transactional
-    fun lockArchive() {
         archive.lockForPublication()
+
+        val state = state(source.name)
+        state.lastAttemptAt = clock.instant()
+        state.errorMessage = error.message?.take(2000) ?: error.javaClass.simpleName
     }
 
-    @Transactional
-    fun bumpRevision() {
-        archive.advanceRevision(now())
-    }
-
-    fun now(): Instant =
-        clock.instant()
+    private fun state(code: String): ImportStateEntity =
+        states.findById(code).orElseGet { states.save(ImportStateEntity(code = code)) }
 }

@@ -25,5 +25,5 @@ data class PriceSelectionDto(
 
     val frequency: PriceFrequency,
 
-    val preferredSource: PriceSource
+    val source: PriceSource
 )

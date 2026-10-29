@@ -59,8 +59,7 @@ class SourceTlsTest {
     ): ImportProperties =
         ImportProperties().also {
             it.requestTimeout = Duration.ofSeconds(5)
-            it.rosstat.weeklyCatalog = uri.toString()
-            it.rosstat.monthlyCatalog = uri.toString()
+            it.rosstat.baseUrl = uri.toString()
             it.rosstat.ignoreTlsErrors = ignoreTlsErrors
         }
 

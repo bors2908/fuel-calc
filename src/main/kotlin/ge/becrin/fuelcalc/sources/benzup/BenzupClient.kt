@@ -1,5 +1,6 @@
 package ge.becrin.fuelcalc.sources.benzup
 
+import ge.becrin.fuelcalc.fuels.FuelType
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.service.SourceHttpClient
 import ge.becrin.fuelcalc.sources.service.SourceImportException
@@ -35,7 +36,6 @@ class BenzupClient(
         }
 
         val prices = mutableMapOf<Pair<String, String>, BenzupPrice>()
-        val names = mutableMapOf<String, String>()
 
         for (row in root.path("result")) {
             val fuel = FUELS[row.path("product").asString()] ?: continue
@@ -46,23 +46,21 @@ class BenzupClient(
             }
 
             val regionId = row.path("region_id").asString()
-            val name = row.path("region_name").asString().trim()
             val price = raw.asString().toBigDecimalOrNull()
 
-            if (!regionId.matches(Regex("[1-9][0-9]{0,9}")) || name.isBlank() ||
+            if (!regionId.matches(Regex("[1-9][0-9]{0,9}")) ||
                 price == null || price <= BigDecimal.ZERO || price.toPlainString().length > 64
             ) {
                 throw SourceImportException("INVALID_RESPONSE", "Invalid BenzUp regional index [regionId=$regionId, fuel=$fuel]")
             }
 
-            val entry = BenzupPrice(regionId, name, fuel, price)
+            val entry = BenzupPrice(regionId, fuel, price)
             val previous = prices[regionId to fuel]
 
-            if (names[regionId]?.let { it != name } == true || previous?.let { it.price.compareTo(price) != 0 } == true) {
+            if (previous?.let { it.price.compareTo(price) != 0 } == true) {
                 throw SourceImportException("SOURCE_DATA_CONFLICT", "Conflicting BenzUp regional index [regionId=$regionId, fuel=$fuel]")
             }
 
-            names[regionId] = name
             prices[regionId to fuel] = entry
         }
 
@@ -74,6 +72,6 @@ class BenzupClient(
     }
 
     companion object {
-        private val FUELS = mapOf("A0920" to "AI_92", "A0950" to "AI_95", "D0DT0" to "DIESEL")
+        private val FUELS = FuelType.entries.associate { it.benzupCode to it.name }
     }
 }

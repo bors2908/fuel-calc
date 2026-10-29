@@ -17,7 +17,7 @@ class ComparisonResolver(
         selection: PriceSelection,
         boundaries: List<PriceRow> = query.boundaries(selection)
     ): ComparisonSnapshot {
-        val latest = boundaries.groupBy { it.region.code }.values.map { rows -> rows.maxBy { it.period.referenceDate } }
+        val latest = boundaries.groupBy { it.region.okatoCode }.values.map { rows -> rows.maxBy { it.period.referenceDate } }
 
         if (latest.isEmpty()) {
             return ComparisonSnapshot(selection, ComparisonStatus.NO_DATA, emptyList(), null, null, false)

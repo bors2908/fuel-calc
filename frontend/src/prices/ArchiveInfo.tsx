@@ -1,64 +1,38 @@
-import { useState } from "react";
 import type { Schema } from "../api/types";
-import { sourceNames, frequencyNames } from "../api/types";
+import { sourceNames } from "../api/types";
 import { timestamp } from "../ui/format";
-import { Coverage } from "./Coverage";
 
-export function ArchiveInfo({
-  overview,
-  busy,
-  onRefresh,
-}: {
-  overview: Schema<"PriceOverview">;
-  busy: boolean;
-  onRefresh: () => void;
-}) {
-  const [coverageOpen, setCoverageOpen] = useState(false);
+export function ArchiveInfo({ updates }: { updates: Schema<"SourceUpdates"> }) {
   return (
     <section className="archive-info">
-      <h2>Откуда берутся данные</h2>
+      <h2>Два взгляда на цену</h2>
       <p>
-        Цены — региональные средние из открытых источников. Источник и дата указаны у каждого
-        значения. Обновление сайта не превращает архивное наблюдение в сегодняшнюю цену.
+        Официальная статистика Росстата выходит по неделям. Рыночный индекс BenzUp сохраняется по
+        дням. Это отдельные ряды: один источник не заменяет другой.
       </p>
       <ul className="source-updates">
-        {Object.entries(overview.sourceUpdates).map(([key, update]) => (
+        {Object.entries(updates).map(([key, update]) => (
           <li key={key}>
             <strong>
-              {sourceNames[update.provider]} · {frequencyNames[update.frequency]}
+              {sourceNames[update.source]} ·{" "}
+              {update.source === "OFFICIAL" ? "Росстат / rustata" : "BenzUp"}
             </strong>
             <span>
               {
                 {
-                  READY: "Поток доступен",
-                  DELAYED: "Публикация задерживается",
-                  UNAVAILABLE: "Источник временно недоступен; используется сохранённый архив",
-                  UNKNOWN: "Срок обновления неизвестен",
+                  READY: "Данные загружены",
+                  UNAVAILABLE: "Источник временно недоступен; сохранённая история доступна",
+                  UNKNOWN: "Загрузок пока нет",
                 }[update.status]
               }
             </span>
             <small>Последняя успешная загрузка: {timestamp(update.lastSuccessAt)}</small>
-            {update.nextExpectedPublicationAt && (
-              <small>Ожидаемая публикация: {timestamp(update.nextExpectedPublicationAt)}</small>
-            )}
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        aria-expanded={coverageOpen}
-        disabled={busy}
-        onClick={() => setCoverageOpen(!coverageOpen)}
-      >
-        Покрытие архива
-      </button>
-      {coverageOpen && (
-        <Coverage
-          context={overview.context}
-          version={overview.meta.dataVersion}
-          onRefresh={onRefresh}
-        />
-      )}
+      <p className="muted">
+        Дата наблюдения указана у цены. Время загрузки показывает, когда данные появились в сервисе.
+      </p>
     </section>
   );
 }

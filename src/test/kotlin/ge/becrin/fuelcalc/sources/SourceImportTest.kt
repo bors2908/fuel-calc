@@ -1,567 +1,397 @@
 package ge.becrin.fuelcalc.sources
 
 import com.sun.net.httpserver.HttpServer
-import ge.becrin.fuelcalc.prices.PriceFrequency
-import ge.becrin.fuelcalc.prices.jpa.PricePeriodEntity
-import ge.becrin.fuelcalc.prices.jpa.PricePeriodRepository
-import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyEntity
-import ge.becrin.fuelcalc.prices.jpa.RegionalPriceKeyRepository
-import ge.becrin.fuelcalc.prices.jpa.RegionalPriceObservationEntity
-import ge.becrin.fuelcalc.regions.jpa.RegionEntity
-import ge.becrin.fuelcalc.fuels.jpa.FuelTypeEntity
+import ge.becrin.fuelcalc.fuels.FuelType
+import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.benzup.BenzupClient
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
-import ge.becrin.fuelcalc.sources.rosstat.RosstatMonthlyParser
-import ge.becrin.fuelcalc.sources.rosstat.RosstatRegionCatalogParser
-import ge.becrin.fuelcalc.sources.rosstat.RosstatCatalogParser
-import ge.becrin.fuelcalc.sources.rosstat.RosstatWeeklyParser
-import ge.becrin.fuelcalc.sources.rustata.RustataClient
-import ge.becrin.fuelcalc.sources.rustata.RustataWeekResolver
+import ge.becrin.fuelcalc.sources.model.FetchedPrice
+import ge.becrin.fuelcalc.sources.service.OfficialImportService
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.RegionCatalogService
-import ge.becrin.fuelcalc.sources.service.SourceHttpClient
-import ge.becrin.fuelcalc.sources.service.SourceImportException
-import org.jsoup.Jsoup
+import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.mock
-import org.mockito.kotlin.doThrow
-import org.mockito.kotlin.any
-import org.mockito.kotlin.never
-import org.mockito.kotlin.verify
-import org.mockito.kotlin.whenever
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.context.annotation.Import
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.jdbc.core.JdbcTemplate
+import org.testcontainers.junit.jupiter.Container
+import org.testcontainers.junit.jupiter.Testcontainers
+import org.testcontainers.postgresql.PostgreSQLContainer
+import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.math.BigDecimal
 import java.net.InetSocketAddress
-import java.net.InetAddress
-import java.net.ServerSocket
-import java.net.http.HttpConnectTimeoutException
-import java.net.URI
-import java.nio.file.Files
-import java.time.Clock
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+import java.time.DayOfWeek
 import java.time.Duration
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneOffset
-import java.sql.Date
-import java.util.concurrent.atomic.AtomicInteger
+import java.time.temporal.TemporalAdjusters
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+@SpringBootTest(properties = ["imports.enabled=false"])
+@Import(SourceTestClockConfiguration::class)
+@Testcontainers
 class SourceImportTest {
-    private val regions = RegionCatalog().also {
-        it.replace(fixtureRegions() + RegionCatalog.Region("45000000000", "Город федерального значения Москва"))
-    }
+    @Autowired
+    private lateinit var official: OfficialImportService
 
-    private val weekly = RosstatWeeklyParser(regions)
+    @Autowired
+    private lateinit var market: BenzupImportService
 
-    private val now = Instant.parse("2026-10-26T12:00:00Z")
+    @Autowired
+    private lateinit var catalogService: RegionCatalogService
 
-    private val clock = Clock.fixed(now, ZoneOffset.UTC)
+    @Autowired
+    private lateinit var catalog: RegionCatalog
 
-    @Test
-    fun testRosstatCatalogFindsSeparateDocumentTitlesAndDeduplicatesHtmlLinks() {
-        val document = Jsoup.parse(resource("rosstat/catalog.html"), "https://rosstat.gov.ru/statistics/price")
-        val parser = RosstatCatalogParser()
-        val monthly = parser.links(document, PriceFrequency.MONTHLY)
-        val weekly = parser.links(document, PriceFrequency.WEEKLY)
+    @Autowired
+    private lateinit var properties: ImportProperties
 
-        assertEquals(2, monthly.size)
-        assertTrue(monthly.all { it.title.contains("Средние потребительские цены") && it.uri.path.endsWith(".xlsx") })
-        assertEquals("/storage/mediabank/159_14-10-2026.html", weekly.single().uri.path)
-        assertEquals(LocalDate.of(2026, 10, 12), this.weekly.period(weekly.single().title).referenceDate)
-    }
+    @Autowired
+    private lateinit var store: ImportStore
 
-    @Test
-    fun testCatalogParserSelectsLatestMonthRegardlessOfSheetOrder() {
-        val path = Files.createTempFile("fuel-calc-catalog-months-", ".xlsx")
+    @Autowired
+    private lateinit var jdbc: JdbcTemplate
 
-        try {
-            XSSFWorkbook().use { workbook ->
-                for ((month, name) in listOf("01(2026)" to "Новый край", "12(2025)" to "Старый край")) {
-                    val sheet = workbook.createSheet(month)
-                    val header = sheet.createRow(0)
-                    header.createCell(0).setCellValue("Код территории")
-                    header.createCell(1).setCellValue("Наименование территории")
-
-                    val row = sheet.createRow(1)
-                    row.createCell(0).setCellValue(1000000000.0)
-                    row.createCell(1).setCellValue(name)
-                }
-
-                Files.newOutputStream(path).use(workbook::write)
-            }
-
-            assertEquals(listOf(RegionCatalog.Region("01000000000", "Новый край")), RosstatRegionCatalogParser().parse(path))
-        } finally {
-            Files.deleteIfExists(path)
-        }
+    @BeforeEach
+    fun prepare() {
+        properties.enabled = true
+        properties.rosstat.baseUrl = baseUrl
+        properties.rosstat.startDate = LocalDate.of(2025, 1, 1)
+        properties.rustata.baseUrl = baseUrl
+        properties.rustata.startDate = properties.rosstat.startDate
+        properties.rustata.token = "test-token"
+        properties.rustata.requestInterval = Duration.ZERO
+        properties.regions.okatoEndpoint = "$baseUrl/backbone/set/13032"
+        properties.regions.selectionEndpoint = "$baseUrl/backbone/set/304297"
+        properties.benzup.endpoint = "$baseUrl/market"
+        failFromYear = null
+        fallbackUnavailable = false
+        invalidRustataPage = false
+        catalogUnavailable = false
+        malformedMask = false
+        requests.clear()
+        jdbc.update("DELETE FROM fuel_prices")
+        jdbc.update("DELETE FROM import_states")
+        jdbc.update("DELETE FROM regions")
+        assertTrue(catalogService.refresh())
     }
 
     @Test
-    fun testCatalogRefreshFailureRetainsDatabaseSnapshotWithoutBundledFiles() {
-        val store = mock<ImportStore>()
-        val http = mock<SourceHttpClient>()
-        val saved = listOf(RegionCatalog.Region("01000000000", "Тестовый край"))
-        val catalog = RegionCatalog()
-        val service = RegionCatalogService(http, properties(), RosstatRegionCatalogParser(), store, catalog, RosstatCatalogParser())
-        whenever(store.savedRegions()).thenReturn(saved)
-        doThrow(SourceImportException("TLS_FAILED", "Test TLS failure")).whenever(http).beginRun()
+    fun testCatalogUsesSelectionReferencesAndPreservesExactCodesAndNames() {
+        assertEquals(setOf("643", "030", "03000000000", "71140000000"), catalog.regions.map { it.okatoCode }.toSet())
+        assertNull(catalog.byOkatoCode("03401000000"))
+        assertTrue(catalog.byOkatoCode("71140000000")?.name.orEmpty().contains("Ямало-Ненецкий"))
+    }
 
-        service.restore()
+    @Test
+    fun testUnchangedPayloadDoesNotUpdateDatabaseAndUnavailableCatalogRetainsHistory() {
+        val revision = jdbc.queryForObject("SELECT revision FROM archive_state", Long::class.java)
+        val saved = catalog.regions
 
-        assertTrue(service.refresh())
+        assertTrue(catalogService.refresh())
+        assertEquals(revision, jdbc.queryForObject("SELECT revision FROM archive_state", Long::class.java))
+
+        catalogUnavailable = true
+
+        assertTrue(catalogService.refresh())
         assertEquals(saved, catalog.regions)
-        verify(store, never()).synchronizeRegions(any())
-
-        val empty = RegionCatalog()
-        val coldStart = RegionCatalogService(http, properties(), RosstatRegionCatalogParser(), store, empty, RosstatCatalogParser())
-
-        assertFalse(coldStart.refresh())
-        assertTrue(empty.regions.isEmpty())
+        assertEquals(saved.toSet(), store.savedRegions().toSet())
     }
 
     @Test
-    fun testCatalogExtractsOnlyRegionsAndPreservesLeadingZeroes() {
-        val catalog = fixtureRegions()
+    fun testBrokenMaskCannotReplaceCatalogOrItsHash() {
+        val hash = jdbc.queryForObject("SELECT content_hash FROM import_states WHERE code='REGIONS'", String::class.java)
+        val saved = store.savedRegions()
+        malformedMask = true
 
-        assertEquals(setOf("03000000000", "14000000000"), catalog.map { it.code }.toSet())
-        assertTrue(catalog.none { it.code == "14401000000" })
-        assertEquals("45000000000", regions.byName("г. Москва")?.code)
+        assertTrue(catalogService.refresh())
+        assertEquals(saved, store.savedRegions())
+        assertEquals(hash, jdbc.queryForObject("SELECT content_hash FROM import_states WHERE code='REGIONS'", String::class.java))
     }
 
     @Test
-    fun testCatalogNormalizesAdministrativeNamesWithoutMergingDifferentTerritories() {
-        val catalog = RegionCatalog()
-        val full = RegionCatalog.Region("01000000000", "Тестовая область (включая автономный округ)")
-        val excluding = RegionCatalog.Region("02000000000", "Тестовая область (кроме автономного округа)")
-        val alternate = RegionCatalog.Region("03000000000", "Тестовая Республика - Иное название")
-        val district = RegionCatalog.Region("04000000000", "Тестовый автономный округ")
-        catalog.replace(listOf(full, excluding, alternate, district))
+    fun testOfficialHistoryPagesByCalendarYearAndResumesFromSuccessfulCheckpoint() {
+        official.fetch()
 
-        assertEquals(full, catalog.byName("Тестовая область"))
-        assertEquals(excluding, catalog.byName("Тестовая область (кроме автономного округа)"))
-        assertEquals(alternate, catalog.byName("Тестовая Республика"))
-        assertEquals(district, catalog.byName("в том числе: Тестовый авт. округ"))
-        assertFailsWith<IllegalArgumentException> { catalog.replace(listOf(full, full.copy(code = "05000000000"))) }
-        assertFailsWith<IllegalArgumentException> { catalog.replace(listOf(RegionCatalog.Region("BENZUP_999", "Новый регион"))) }
-        assertEquals(full, catalog.byName("Тестовая область"))
+        assertEquals(LocalDate.of(2026, 10, 26), store.fetchedThrough())
+        assertEquals(setOf(2025, 2026), reportYears())
+        assertFalse(requests.any { it.startsWith("/api/v1/data") })
+        assertTrue(countPrices() > 1000)
+
+        val count = countPrices()
+        requests.clear()
+
+        official.fetch()
+
+        assertEquals(setOf(2026), reportYears())
+        assertEquals(count, countPrices())
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(DISTINCT source) FROM fuel_prices", Long::class.java))
     }
 
     @Test
-    fun testWeeklyBulletinUsesExplicitPeriodAndRegionalFuelColumns() {
-        val document = Jsoup.parse(resource("rosstat/weekly.html"))
-        val publication = weekly.parse(document, "https://rosstat.gov.ru/test.html", LocalDate.of(2026, 9, 9))
+    fun testUnavailableRosstatUsesRustataWithoutDependingOnOfficialCalendar() {
+        failFromYear = 2025
 
-        assertEquals(LocalDate.of(2026, 9, 7), publication.period.referenceDate)
-        assertEquals(LocalDate.of(2026, 9, 1), publication.period.startDate)
-        assertEquals(6, publication.facts.size)
-        assertEquals(BigDecimal("80.01"), publication.facts.single { it.regionCode == "03000000000" && it.fuelCode == "DIESEL" }.price)
-        assertEquals(setOf("03000000000", "14000000000"), publication.facts.map { it.regionCode }.toSet())
+        official.fetch()
+
+        assertEquals(LocalDate.of(2026, 10, 26), store.fetchedThrough())
+        assertEquals(2L, countPrices())
+        assertEquals(setOf("RUSTATA"), jdbc.queryForList("SELECT DISTINCT provider FROM fuel_prices", String::class.java).toSet())
+        assertEquals(setOf("OFFICIAL"), jdbc.queryForList("SELECT DISTINCT source FROM fuel_prices", String::class.java).toSet())
     }
 
     @Test
-    fun testMonthlyWorkbookUsesPublishedDisplayAndExcludesCity() {
-        val path = Files.createTempFile("fuel-calc-fixture-", ".xlsx")
+    fun testFailedYearCannotAdvanceCheckpointAndCompletedYearSurvivesRestart() {
+        failFromYear = 2026
+        fallbackUnavailable = true
 
-        try {
-            checkNotNull(javaClass.getResourceAsStream("/sources/rosstat/monthly.xlsx")).use { input ->
-                Files.newOutputStream(path).use(input::copyTo)
-            }
+        official.fetch()
 
-            val publication = RosstatMonthlyParser(regions, weekly).parse(path, "https://rosstat.gov.ru/test.xlsx", null).single()
+        assertEquals(LocalDate.of(2025, 12, 31), store.fetchedThrough())
 
-            assertEquals(6, publication.facts.size)
-            assertEquals(LocalDate.of(2026, 1, 31), publication.period.referenceDate)
-            assertEquals(BigDecimal("67.21"), publication.facts.single { it.regionCode == "14000000000" && it.fuelCode == "AI_95" }.price)
-            assertTrue(publication.facts.none { it.regionCode == "14401000000" })
-        } finally {
-            Files.deleteIfExists(path)
+        val completed = countPrices()
+
+        assertTrue(completed > 0)
+        assertEquals("2025", jdbc.queryForObject("SELECT EXTRACT(YEAR FROM MAX(reference_date))::text FROM fuel_prices", String::class.java))
+
+        failFromYear = null
+        requests.clear()
+
+        official.fetch()
+
+        assertEquals(LocalDate.of(2026, 10, 26), store.fetchedThrough())
+        assertTrue(countPrices() > completed)
+        assertEquals(setOf(2025, 2026), reportYears())
+    }
+
+    @Test
+    fun testIncompleteRustataPageDoesNotCommitPricesOrCheckpoint() {
+        failFromYear = 2025
+        invalidRustataPage = true
+
+        official.fetch()
+
+        assertNull(store.fetchedThrough())
+        assertEquals(0L, countPrices())
+        assertTrue(jdbc.queryForObject(
+            "SELECT error_message FROM import_states WHERE code='OFFICIAL'", String::class.java
+        ).orEmpty().contains("pagination"))
+    }
+
+    @Test
+    fun testMarketStoresOnlyTodayAndRetriesReplaceDailyCellWithoutAveraging() {
+        market.fetch()
+
+        val count = countPrices()
+
+        assertTrue(count > 0)
+        assertEquals(setOf("2026-10-26"), jdbc.queryForList("SELECT DISTINCT reference_date::text FROM fuel_prices", String::class.java).toSet())
+        assertEquals(setOf("DAILY"), jdbc.queryForList("SELECT DISTINCT frequency FROM fuel_prices", String::class.java).toSet())
+        assertEquals(setOf("MARKET"), jdbc.queryForList("SELECT DISTINCT source FROM fuel_prices", String::class.java).toSet())
+        assertNull(store.fetchedThrough())
+
+        market.fetch()
+
+        assertEquals(count, countPrices())
+        assertFalse(requests.any { it.startsWith("REPORT:") })
+    }
+
+    @Test
+    fun testFailedWindowRollsBackPricesAndRegionDataFlagsTogether() {
+        val date = LocalDate.of(2026, 10, 26)
+        val window = FetchWindow(date, date)
+        val valid = FetchedPrice("03000000000", FuelType.DIESEL, date, "79.33".toBigDecimal())
+        val invalid = FetchedPrice("643", FuelType.DIESEL, date, "9".repeat(70).toBigDecimal())
+
+        assertFailsWith<DataIntegrityViolationException> {
+            store.saveWindow(SourceProvider.ROSSTAT, window, listOf(valid, invalid))
         }
-    }
 
-    @Test
-    fun testMissingPriceIsNotZeroAndUnknownMarkersFail() {
-        assertEquals(null, weekly.price("…"))
-        assertEquals(BigDecimal.ZERO, weekly.price("0"))
-        assertFailsWith<SourceImportException> { weekly.price("н/д?") }
-    }
+        assertEquals(0L, countPrices())
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM regions WHERE has_data", Long::class.java))
+        assertNull(store.fetchedThrough())
 
-    @Test
-    fun testHttpRetriesTransientStatusAndDoesNotRetryInvalidPayload() {
-        val calls = AtomicInteger()
-        val attempts = AtomicInteger()
+        store.saveWindow(SourceProvider.ROSSTAT, window, listOf(valid))
 
-        stub { index -> if (index == 1) 503 to "unavailable" else 200 to "payload" }.use { server ->
-            val client = SourceHttpClient(properties(), clock)
-            val body = client.read(server.uri, beforeAttempt = { attempts.incrementAndGet() }) { Files.readString(it) }
-
-            assertEquals("payload", body)
-            assertEquals(2, server.calls.get())
-            assertEquals(2, attempts.get())
-        }
-
-        stub {
-            calls.incrementAndGet()
-
-            200 to "invalid"
-        }.use { server ->
-            val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties(), clock).read(server.uri) { throw IllegalArgumentException("Invalid format") }
-            }
-
-            assertEquals("INVALID_RESPONSE", error.code)
-            assertTrue(error.cause is IllegalArgumentException)
-            assertTrue(error.message.orEmpty().contains("Invalid format"))
-            assertTrue(error.message.orEmpty().contains(server.uri.host))
-            assertEquals(1, calls.get())
-        }
-    }
-
-    @Test
-    fun testTlsHandshakeTimeoutReportsConnectionTimeoutAndPreservesCause() {
-        ServerSocket(0, 50, InetAddress.getByName("127.0.0.1")).use { server ->
-            val properties = properties().also { it.connectTimeout = Duration.ofMillis(200) }
-            val uri = URI.create("https://127.0.0.1:${server.localPort}/api/stations")
-            val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties, clock).read(uri) { Files.readString(it) }
-            }
-
-            assertEquals("CONNECT_TIMEOUT", error.code)
-            assertTrue(error.message.orEmpty().contains("connectTimeoutMs=200"))
-            assertTrue(error.message.orEmpty().contains("TCP/TLS"))
-            assertTrue(error.message.orEmpty().contains(uri.toString()))
-            assertTrue(generateSequence<Throwable>(error) { it.cause }.any { it is HttpConnectTimeoutException })
-        }
-    }
-
-    @Test
-    fun testHttpRateLimitHasCooldownAndNoImmediateRetry() {
-        stub { 429 to "rate limited" }.use { server ->
-            val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties(), clock).read(server.uri) { Files.readString(it) }
-            }
-
-            assertEquals("RATE_LIMITED", error.code)
-            assertEquals(now.plusSeconds(120), error.retryAt)
-            assertEquals(1, server.calls.get())
-        }
-    }
-
-    @Test
-    fun testHttpResponseSizeIsBounded() {
-        val properties = properties().also { it.maxResponseBytes = 32 }
-
-        stub { 200 to "x".repeat(200) }.use { server ->
-            val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties, clock).read(server.uri) { Files.readString(it) }
-            }
-
-            assertEquals("RESPONSE_TOO_LARGE", error.code)
-        }
-    }
-
-    @Test
-    fun testRustataHolidayDateUsesOfficialIntervalOnlyWhenEveryPriceMatches() {
-        val sourceDate = LocalDate.of(2026, 2, 23)
-        val referenceDate = sourceDate.plusDays(1)
-        val calendar = listOf(mapOf<String, Any>(
-            "reference_date" to Date.valueOf(referenceDate),
-            "start_date" to Date.valueOf(LocalDate.of(2026, 2, 17)),
-            "end_date" to Date.valueOf(referenceDate)
+        assertEquals(listOf(valid.regionCode), jdbc.queryForList(
+            "SELECT okato_code FROM regions WHERE has_data", String::class.java
         ))
-        val official = listOf(mapOf<String, Any>(
-            "reference_date" to Date.valueOf(referenceDate), "region_code" to "01000000000",
-            "fuel_type_code" to "DIESEL", "price" to BigDecimal("77.40")
-        ))
-
-        stub { 200 to resource("rustata/holiday-week.json") }.use { server ->
-            val adapter = weeklyRustata(server.uri, calendar, official)
-            val result = adapter.fetch(
-                adapter.definition(PriceFrequency.WEEKLY), FetchWindow(sourceDate, referenceDate, "BACKFILL")
-            ).single()
-
-            assertEquals(referenceDate, result.period.referenceDate)
-            assertEquals(LocalDate.of(2026, 2, 17), result.period.startDate)
-            assertTrue(result.externalKey.endsWith(sourceDate.toString()))
-            assertTrue(result.attribution.contains(sourceDate.toString()))
-            assertEquals(BigDecimal("77.4"), result.facts.single().price)
-        }
-
-        stub { 200 to resource("rustata/holiday-week.json") }.use { server ->
-            val differing = official.map { it + ("price" to BigDecimal("77.41")) }
-            val adapter = weeklyRustata(server.uri, calendar, differing)
-            val error = assertFailsWith<SourceImportException> {
-                adapter.fetch(adapter.definition(PriceFrequency.WEEKLY), FetchWindow(sourceDate, referenceDate, "BACKFILL"))
-            }
-
-            assertEquals("UNCONFIRMED_WEEK", error.code)
-        }
-
-        stub { 200 to resource("rustata/holiday-week.json") }.use { server ->
-            val adapter = weeklyRustata(server.uri, calendar, emptyList())
-
-            assertFailsWith<SourceImportException> {
-                adapter.fetch(adapter.definition(PriceFrequency.WEEKLY), FetchWindow(sourceDate, referenceDate, "BACKFILL"))
-            }
-        }
     }
 
-    @Test
-    fun testRustataDoesNotChooseBetweenOverlappingOfficialIntervals() {
-        val sourceDate = LocalDate.of(2026, 2, 23)
-        val calendar = listOf(1L, 2L).map { days -> mapOf<String, Any>(
-            "reference_date" to Date.valueOf(sourceDate.plusDays(days)),
-            "start_date" to Date.valueOf(sourceDate.minusDays(6)),
-            "end_date" to Date.valueOf(sourceDate.plusDays(days))
-        ) }
+    private fun countPrices(): Long =
+        checkNotNull(jdbc.queryForObject("SELECT COUNT(*) FROM fuel_prices", Long::class.java))
 
-        stub { 200 to resource("rustata/holiday-week.json") }.use { server ->
-            val adapter = weeklyRustata(server.uri, calendar)
-            val error = assertFailsWith<SourceImportException> {
-                adapter.fetch(adapter.definition(PriceFrequency.WEEKLY), FetchWindow(sourceDate, sourceDate.plusDays(2), "BACKFILL"))
-            }
+    private fun reportYears(): Set<Int> =
+        requests.filter { it.startsWith("REPORT:") }.map { it.substringAfter(':').toInt() }.toSet()
 
-            assertEquals("UNCONFIRMED_WEEK", error.code)
-        }
-    }
+    companion object {
+        private val json = JsonMapper.builder().build()
 
-    @Test
-    fun testRustataWeeklyUsesConfirmedRosstatIntervals() {
-        val sourceDates = listOf(LocalDate.of(2026, 9, 7), LocalDate.of(2026, 9, 14))
-        val calendar = sourceDates.map { date ->
-            mapOf<String, Any>(
-                "reference_date" to Date.valueOf(date),
-                "start_date" to Date.valueOf(date.minusDays(6)),
-                "end_date" to Date.valueOf(date)
-            )
-        }
+        private val requests = CopyOnWriteArrayList<String>()
 
-        stub { 200 to resource("rustata/weekly.json") }.use { server ->
-            val adapter = weeklyRustata(server.uri, calendar)
-            val result = adapter.fetch(
-                adapter.definition(PriceFrequency.WEEKLY), FetchWindow(sourceDates.first(), sourceDates.last(), "INCREMENTAL")
-            )
+        @Volatile
+        private var failFromYear: Int? = null
 
-            assertEquals(sourceDates, result.map { it.period.referenceDate })
-            assertEquals(sourceDates.map { it.minusDays(6) }, result.map { it.period.startDate })
-            assertEquals(2, result.sumOf { it.facts.size })
-        }
-    }
+        @Volatile
+        private var fallbackUnavailable = false
 
-    @Test
-    fun testRustataWeeklyExplainsMissingDatesWhenRosstatCalendarIsUnavailable() {
-        stub { 200 to resource("rustata/weekly.json") }.use { server ->
-            val adapter = weeklyRustata(server.uri, emptyList())
-            val error = assertFailsWith<SourceImportException> {
-                adapter.fetch(
-                    adapter.definition(PriceFrequency.WEEKLY),
-                    FetchWindow(LocalDate.of(2026, 9, 7), LocalDate.of(2026, 9, 14), "BACKFILL")
-                )
-            }
+        @Volatile
+        private var invalidRustataPage = false
 
-            assertEquals("UNCONFIRMED_WEEK", error.code)
-            assertTrue(error.message.orEmpty().contains("2026-09-07"))
-            assertTrue(error.message.orEmpty().contains("2026-09-14"))
-            assertTrue(error.message.orEmpty().contains("missingCount=2"))
-            assertTrue(error.message.orEmpty().contains("ROSSTAT_WEEKLY_V1"))
-        }
-    }
+        @Volatile
+        private var catalogUnavailable = false
 
-    @Test
-    fun testHttpFailureIncludesEndpointButDoesNotExposeAuthorizationHeader() {
-        stub { 403 to "denied" }.use { server ->
-            val token = "private-test-token"
-            val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties(), clock).read(server.uri, mapOf("Authorization" to "Bearer $token")) {
-                    Files.readString(it)
-                }
-            }
+        @Volatile
+        private var malformedMask = false
 
-            assertEquals("ACCESS_DENIED", error.code)
-            assertTrue(error.message.orEmpty().contains(server.uri.host))
-            assertFalse(error.stackTraceToString().contains(token))
-        }
-    }
-
-    @Test
-    fun testRustataKeepsExactDecimalAndNormalizesMonth() {
-        stub { 200 to resource("rustata/monthly.json") }.use { server ->
-            val properties = properties().also {
-                it.rustata.baseUrl = server.uri.toString()
-                it.rustata.token = "test-token"
-            }
-            val weekResolver = RustataWeekResolver(mock<PricePeriodRepository>(), mock<RegionalPriceKeyRepository>())
-            val adapter = RustataClient(SourceHttpClient(properties, clock), properties, regions, weekResolver)
-            val publication = adapter.fetch(
-                adapter.definition(PriceFrequency.MONTHLY),
-                FetchWindow(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "INCREMENTAL")
-            ).single()
-
-            assertEquals(LocalDate.of(2026, 9, 30), publication.period.referenceDate)
-            assertEquals(BigDecimal("74.62000000000001"), publication.facts.single().price)
-            assertEquals(LocalDate.of(2026, 10, 9), publication.facts.single().publicationDate)
-        }
-    }
-
-    @Test
-    fun testFailedFinalRustataPageCannotReturnPartialPublication() {
-        val firstPage = resource("rustata/monthly.json")
-            .replace("\"series_total\": 1", "\"series_total\": 2")
-            .replace("\"has_more\": false", "\"has_more\": true")
-            .replace("\"next_offset\": null", "\"next_offset\": 1")
-
-        stub { index -> if (index == 1) 200 to firstPage else 403 to "denied" }.use { server ->
-            val properties = properties().also {
-                it.rustata.baseUrl = server.uri.toString()
-                it.rustata.token = "test-token"
-                it.rustata.requestInterval = Duration.ZERO
-            }
-            val weekResolver = RustataWeekResolver(mock<PricePeriodRepository>(), mock<RegionalPriceKeyRepository>())
-            val adapter = RustataClient(SourceHttpClient(properties, clock), properties, regions, weekResolver)
-            val error = assertFailsWith<SourceImportException> {
-                adapter.fetch(adapter.definition(PriceFrequency.MONTHLY), FetchWindow(
-                    LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30), "BACKFILL"
-                ))
-            }
-
-            assertEquals("ACCESS_DENIED", error.code)
-            assertEquals(null, error.retryAt)
-            assertEquals(2, server.calls.get())
-        }
-    }
-
-    @Test
-    fun testBenzupFetchMapsOnlySupportedProductsAndKeepsExactPrices() {
-        val payload = resource("benzup/regional.json").replace("70.69", "70.690000000000000001")
-
-        stub { 200 to payload }.use { server ->
-            val properties = properties().also { it.benzup.endpoint = server.uri.toString() }
-            val result = BenzupClient(SourceHttpClient(properties, clock), properties).fetch()
-
-            assertEquals(4, result.size)
-            assertEquals(BigDecimal("70.690000000000000001"), result.single { it.fuelCode == "AI_92" }.price)
-            assertEquals(setOf("23", "61"), result.map { it.regionId }.toSet())
-            assertEquals(1, server.calls.get())
-        }
-    }
-
-    @Test
-    fun testBenzupRejectsProviderErrorsEmptyResultsAndConflictingPrices() {
-        val invalid = listOf(
-            "{\"result\":[],\"error\":0}",
-            resource("benzup/regional.json").replace("\"error\": 0", "\"error\": 1"),
-            resource("benzup/regional.json").replace("70.69", "-1"),
-            resource("benzup/regional.json").replace("70.69", "not-a-price"),
-            resource("benzup/regional.json").replace("\"result\": [", "\"result\": [{\"region_id\":23,\"region_name\":\"Краснодарский край\",\"product\":\"A0920\",\"index\":\"99\"},")
-        )
-
-        for (payload in invalid) {
-            stub { 200 to payload }.use { server ->
-                val properties = properties().also { it.benzup.endpoint = server.uri.toString() }
-
-                assertFailsWith<SourceImportException> {
-                    BenzupClient(SourceHttpClient(properties, clock), properties).fetch()
-                }
-
-                assertEquals(1, server.calls.get())
-            }
-        }
-    }
-
-    private fun weeklyRustata(
-        uri: URI,
-        calendar: List<Map<String, Any>>,
-        official: List<Map<String, Any>> = emptyList()
-    ): RustataClient {
-        val properties = properties().also {
-            it.rustata.baseUrl = uri.toString()
-            it.rustata.token = "test-token"
-        }
-        val periods = mock<PricePeriodRepository>()
-        val keys = mock<RegionalPriceKeyRepository>()
-        val series = JsonMapper.builder().build().readTree(resource("rustata/weekly.json")).path("series").first()
-        val catalog = RegionCatalog()
-        catalog.replace(listOf(RegionCatalog.Region(series.path("geo").asString(), series.path("geo_label").asString())))
-        val confirmed = calendar.map { row ->
-            PricePeriodEntity(
-                periodKey = "WEEKLY:${row.getValue("reference_date")}",
-                frequency = PriceFrequency.WEEKLY,
-                referenceDate = (row.getValue("reference_date") as Date).toLocalDate(),
-                startDate = (row.getValue("start_date") as Date).toLocalDate(),
-                endDate = (row.getValue("end_date") as Date).toLocalDate()
-            )
-        }
-        val prices = official.map { row ->
-            val period = confirmed.single { it.referenceDate == (row.getValue("reference_date") as Date).toLocalDate() }
-            val key = mock<RegionalPriceKeyEntity>()
-            val observation = mock<RegionalPriceObservationEntity>()
-
-            whenever(key.period).thenReturn(period)
-            whenever(key.region).thenReturn(RegionEntity(code = row.getValue("region_code").toString(), name = "Test", createdAt = now))
-            whenever(key.fuelType).thenReturn(
-                FuelTypeEntity(code = row.getValue("fuel_type_code").toString(), name = "Test", sortOrder = 1)
-            )
-            whenever(key.currentObservation).thenReturn(observation)
-            whenever(observation.priceRubPerLiter).thenReturn(row.getValue("price") as BigDecimal)
-
-            key
-        }
-
-        whenever(periods.findOfficialWeeks(any(), any())).thenReturn(confirmed)
-        whenever(keys.findOfficialAtDates(any())).thenReturn(prices)
-
-        return RustataClient(SourceHttpClient(properties, clock), properties, catalog, RustataWeekResolver(periods, keys))
-    }
-
-    private fun properties(): ImportProperties =
-        ImportProperties().also { it.requestTimeout = Duration.ofSeconds(5) }
-
-    private fun fixtureRegions(): List<RegionCatalog.Region> {
-        val path = Files.createTempFile("fuel-calc-region-fixture-", ".xlsx")
-
-        try {
-            checkNotNull(javaClass.getResourceAsStream("/sources/rosstat/monthly.xlsx")).use { input ->
-                Files.newOutputStream(path).use(input::copyTo)
-            }
-
-            return RosstatRegionCatalogParser().parse(path)
-        } finally {
-            Files.deleteIfExists(path)
-        }
-    }
-
-    private fun resource(name: String): String =
-        checkNotNull(javaClass.getResourceAsStream("/sources/$name")).bufferedReader().use { it.readText() }
-
-    private fun stub(response: (Int) -> Pair<Int, String>): Stub =
-        Stub(response)
-
-    private class Stub(
-        response: (Int) -> Pair<Int, String>
-    ) : AutoCloseable {
-        val calls = AtomicInteger()
-
-        private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { server ->
+        private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).also { server ->
             server.createContext("/") { exchange ->
-                val (status, body) = response(calls.incrementAndGet())
-                val bytes = body.toByteArray(Charsets.UTF_8)
-                exchange.responseHeaders.set("Content-Type", "application/json; charset=utf-8")
-                exchange.responseHeaders.set("Retry-After", "120")
-                exchange.sendResponseHeaders(status, bytes.size.toLong())
-                exchange.responseBody.use { it.write(bytes) }
-                exchange.close()
+                try {
+                    val path = exchange.requestURI.path
+                    requests.add(exchange.requestURI.toString())
+                    var status = 200
+                    val response =
+                        when (path) {
+                            "/backbone/set/13032" -> {
+                                if (catalogUnavailable) {
+                                    status = 400
+                                }
+
+                                resource("rosstat/territories.json")
+                            }
+                            "/backbone/set/304297" -> if (malformedMask) "[{\"-298\":99999999}]" else resource("rosstat/selection.json")
+                            "/backbone/set/108929" -> resource("rosstat/goods.json")
+                            "/olap2/descr/report/274422/" -> {
+                                exchange.responseHeaders.add("Set-Cookie", "csrftoken=public-session; Path=/")
+
+                                "session"
+                            }
+                            "/olap2/olap2-descriptor-report/274422/" -> resource("rosstat/weekly-report.json")
+                            "/olap2/olap2-preview/" -> {
+                                require(exchange.requestHeaders.getFirst("X-CSRFToken") == "public-session")
+                                require(exchange.requestHeaders.getFirst("Cookie").contains("csrftoken=public-session"))
+                                require(exchange.requestHeaders.getFirst("Referer").startsWith(baseUrl))
+
+                                val form = parameters(exchange.requestBody.bufferedReader().readText())
+                                val request = json.readTree(checkNotNull(form["jkwargs"]))
+                                val dates = values(request.path("col_header"), -64).toList().map { it.asString() }
+                                val year = dates.first().take(4).toInt()
+                                requests.add("REPORT:$year")
+
+                                if (failFromYear?.let { year >= it } == true) {
+                                    status = 400
+                                }
+
+                                val regions = values(request.path("row_header"), 13033).toList().map { it.asLong() }
+                                val fuels = values(request.path("row_header"), 108930).toList().map { it.asLong() }
+                                val rows = fuels.flatMap { fuel -> regions.map { region ->
+                                    listOf("13033#eq#$region", "108930#eq#$fuel")
+                                } }
+
+                                json.writeValueAsString(mapOf(
+                                    "headers" to mapOf("rowFilters" to rows, "colFilters" to dates.map { listOf("-64#eq#$it") }),
+                                    "data" to mapOf("reportData" to mapOf("data" to rows.map { dates.map { mapOf("db_value" to "79.33") } }))
+                                ))
+                            }
+                            "/api/v1/data" -> {
+                                if (fallbackUnavailable) {
+                                    status = 400
+                                }
+
+                                val query = parameters(exchange.requestURI.rawQuery)
+                                val from = LocalDate.parse(query.getValue("start"))
+                                val date = from.with(TemporalAdjusters.nextOrSame(DayOfWeek.MONDAY))
+                                val series = mapOf(
+                                    "series_key" to "test", "geo_level" to "region", "geo" to "03000000000", "unit" to "RUB",
+                                    "freq" to "W", "indicator" to "AVG_PRICE", "classification" to "7804"
+                                )
+                                val result = mutableMapOf<String, Any>(
+                                    "series" to listOf(series),
+                                    "observations" to listOf(mapOf("series_key" to "test", "period" to date.toString(), "value" to "80.50")),
+                                    "offset" to 0, "series_total" to 1, "series_count" to 1, "observation_count" to 1,
+                                    "has_more" to false
+                                )
+
+                                if (invalidRustataPage) {
+                                    result.remove("has_more")
+                                }
+
+                                json.writeValueAsString(result)
+                            }
+                            "/market" -> resource("benzup/regional.json")
+                            else -> {
+                                status = 404
+
+                                "{}"
+                            }
+                        }
+                    val bytes = response.toByteArray(StandardCharsets.UTF_8)
+                    exchange.responseHeaders.add("Content-Type", "application/json")
+                    exchange.sendResponseHeaders(status, bytes.size.toLong())
+                    exchange.responseBody.use { it.write(bytes) }
+                } finally {
+                    exchange.close()
+                }
             }
             server.start()
         }
 
-        val uri: URI = URI.create("http://127.0.0.1:${server.address.port}")
+        private val baseUrl: String = "http://127.0.0.1:${server.address.port}"
 
-        override fun close() {
+        @Container
+        @ServiceConnection
+        @JvmField
+        val postgres = PostgreSQLContainer("postgres:17-alpine")
+
+        private fun resource(path: String): String =
+            checkNotNull(SourceImportTest::class.java.getResourceAsStream("/sources/$path")).bufferedReader().use { it.readText() }
+
+        private fun parameters(raw: String): Map<String, String> =
+            raw.split('&').associate { part ->
+                URLDecoder.decode(part.substringBefore('='), StandardCharsets.UTF_8) to
+                    URLDecoder.decode(part.substringAfter('='), StandardCharsets.UTF_8)
+            }
+
+        private fun values(
+            nodes: JsonNode,
+            descriptor: Long
+        ): JsonNode {
+            for (node in nodes) {
+                val field = node.path("descriptor")
+                val id = if (field.isArray) field.path(0).asLong() else field.asLong()
+
+                if (id == descriptor) {
+                    return node.path("values")
+                }
+
+                val children = node.path("children")
+
+                if (children.isArray) {
+                    val found = values(children, descriptor)
+
+                    if (!found.isMissingNode) {
+                        return found
+                    }
+                }
+            }
+
+            return json.missingNode()
+        }
+
+        @JvmStatic
+        @AfterAll
+        fun stopSource() {
             server.stop(0)
         }
     }

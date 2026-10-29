@@ -1,8 +1,7 @@
 package ge.becrin.fuelcalc.regions.dto
 
-
 data class RegionRefDto(
-    val code: String,
+    val okatoCode: String,
 
     val name: String
 )

@@ -12,8 +12,10 @@ class RegionQueryService(
 
     private val regions: RegionRepository
 ) {
-    fun list(): RegionListDto =
+    fun list(includeEmptyRegions: Boolean = false): RegionListDto =
         archive.read { meta ->
-            RegionListDto(meta, regions.findOrdered().map { RegionRefDto(it.code, it.name) })
+            val selected = if (includeEmptyRegions) regions.findAllOrdered() else regions.findOrdered()
+
+            RegionListDto(meta, selected.map { RegionRefDto(it.okatoCode, it.name) })
         }
 }

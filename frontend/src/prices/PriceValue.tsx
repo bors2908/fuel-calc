@@ -1,38 +1,19 @@
-import type { PriceCell, Schema } from "../api/types";
+import type { PriceCell } from "../api/types";
+import { sourceNames } from "../api/types";
 import { date, number } from "../ui/format";
 
-export function PriceSource({
-  price,
-  preferredSource,
-}: {
-  price: PriceCell;
-  preferredSource: Schema<"PriceSource">;
-}) {
-  if (price.priceRubPerLiter === null) {
-    return <span className="muted">Нет наблюдения</span>;
-  }
+export function PriceSource({ price }: { price: PriceCell }) {
   return (
     <span className="source-label">
-      {price.source.provider.code !== preferredSource && "Резерв: "}
-      {price.source.provider.name}
-      {price.source.sample && (
-        <span className="sample-label">
-          Среднее по замерам · {price.source.sample.measurementCount} замеров ·{" "}
-          {price.source.sample.dayCount}/{price.source.sample.expectedDayCount} дней
-          {price.source.sample.dayCount < price.source.sample.expectedDayCount &&
-            " · неполный период"}
-        </span>
-      )}
+      {price.priceRubPerLiter === null ? "Нет наблюдения" : sourceNames[price.source]}
     </span>
   );
 }
 export function PriceValue({
   price,
-  preferredSource,
   onObservation,
 }: {
   price: PriceCell;
-  preferredSource: Schema<"PriceSource">;
   onObservation?: (id: string) => void;
 }) {
   if (price.priceRubPerLiter === null) {
@@ -44,12 +25,10 @@ export function PriceValue({
         {number(price.priceRubPerLiter)} <small>₽/л</small>
       </strong>
       <span>
-        {price.period.label} · {date(price.period.referenceDate)}
+        {date(price.period.referenceDate)}
+        {price.source === "OFFICIAL" && " · недельное наблюдение"}
       </span>
-      <PriceSource
-        price={price}
-        preferredSource={preferredSource}
-      />
+      <PriceSource price={price} />
       {onObservation && (
         <button
           type="button"

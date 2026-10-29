@@ -1,8 +1,8 @@
 .skip-link {
+  z-index: 10;
   position: absolute;
   inset-block-start: -10rem;
   inset-inline-start: 1rem;
-  z-index: 10;
   padding: 1rem;
   background: var(--surface);
 }
@@ -12,30 +12,30 @@
 }
 
 .site-header {
-  display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 1.5rem;
+  display: flex;
   padding-block: 1.75rem;
   border-block-end: 1px solid var(--line);
 }
 
 .brand {
-  display: flex;
   align-items: center;
   gap: 0.75rem;
+  display: flex;
   color: var(--ink);
   font-weight: 600;
   text-decoration: none;
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
   flex: 0 0 2.5rem;
-  inline-size: 2.5rem;
+  place-items: center;
+  display: grid;
   block-size: 2.5rem;
+  inline-size: 2.5rem;
   color: var(--surface);
   background: var(--forest);
   border-radius: 0.75rem;
@@ -50,18 +50,18 @@
 }
 
 .site-header nav {
-  display: flex;
   flex-wrap: wrap;
   gap: 1.5rem;
+  display: flex;
 }
 
 .site-header nav a {
-  display: flex;
   align-items: center;
+  display: flex;
   min-block-size: 2.75rem;
   color: var(--muted);
-  text-decoration: none;
   font-size: 0.9rem;
+  text-decoration: none;
 }
 
 .hero {
@@ -91,18 +91,18 @@
 }
 
 .landing-note > div {
-  display: flex;
   flex-wrap: wrap;
   gap: 1.5rem 3rem;
+  display: flex;
   margin-block-start: 3rem;
   color: var(--muted);
 }
 
 .applied-context {
-  display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.75rem;
+  display: flex;
   margin-block: 2rem 0;
   font-size: 0.875rem;
 }
@@ -114,45 +114,45 @@
 .overview {
   --overview-value-size: clamp(2.25rem, 3.5vw, 3rem);
 
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 0 2rem;
   display: grid;
-  grid-template-columns: 1.5fr 1fr 1fr;
-  align-items: start;
-  gap: 2rem;
   padding-block: 2rem 3rem;
   border-block-end: 1px solid var(--line);
 }
 
 .price-value {
-  display: flex;
   flex-direction: column;
   align-items: start;
   gap: 0.25rem;
+  display: flex;
 }
 
 .price-value > strong {
-  font-size: 1.5rem;
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.035em;
+  font-size: 1.5rem;
+  font-weight: 500;
 }
 
 .price-value > strong small {
-  font-size: 0.875rem;
   letter-spacing: normal;
+  font-size: 0.875rem;
 }
 
 .price-value > span {
-  font-size: 0.8rem;
   color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .stat-value {
   display: block;
-  font-size: clamp(1.5rem, 2.5vw, 2rem);
-  font-weight: 500;
+  margin-block-end: 0.5rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.035em;
-  margin-block-end: 0.5rem;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 500;
 }
 
 .overview-label {
@@ -171,8 +171,8 @@
 
 .overview .price-value > strong small,
 .overview .stat-value small {
-  font-size: 1rem;
   letter-spacing: normal;
+  font-size: 1rem;
 }
 
 .overview .price-value > span,
@@ -193,19 +193,10 @@
   font-weight: 500;
 }
 
-.source-label,
-.sample-label {
-  display: block;
-}
-
 .source-label {
+  display: block;
   color: var(--muted);
   font-size: 0.8rem;
-}
-
-.sample-label {
-  max-inline-size: 25rem;
-  margin-block-start: 0.3rem;
 }
 
 .trend-section {
@@ -213,8 +204,8 @@
 }
 
 .view-switch {
-  display: flex;
   flex-wrap: wrap;
+  display: flex;
   max-inline-size: 100%;
   padding: 0.25rem;
   background: var(--tint);
@@ -222,8 +213,8 @@
 }
 
 .view-switch button {
-  border: 0;
   background: transparent;
+  border: 0;
 }
 
 .view-switch button[aria-pressed="true"] {
@@ -237,13 +228,13 @@
 
 .chart text {
   fill: var(--muted);
-  font-size: 0.8rem;
   font-family: inherit;
+  font-size: 0.8rem;
 }
 
 .chart-grid {
   stroke: var(--line);
-  stroke-width: 1;
+  stroke-width: 1px;
 }
 
 .series {
@@ -253,11 +244,7 @@
 
 .series path {
   fill: none;
-  stroke-width: 2;
-}
-
-.base-series path {
-  stroke-width: 3;
+  stroke-width: 2px;
 }
 
 .series-0 {
@@ -266,41 +253,56 @@
 
 .series-1 {
   --series-color: #3167a8;
-
-  stroke-dasharray: 8 4;
 }
 
 .series-2 {
-  --series-color: #996818;
-
-  stroke-dasharray: 2 4;
+  --series-color: #936024;
 }
 
 .series-3 {
-  --series-color: #8a5482;
+  --series-color: #86546f;
+}
 
-  stroke-dasharray: 10 4 2 4;
+.series[data-source="MARKET"] path {
+  stroke-dasharray: 6 4;
+}
+
+.series[data-source="MARKET"] circle {
+  fill: var(--surface);
+  stroke-width: 2px;
 }
 
 .legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem 1.5rem;
 }
 
-.legend-item {
-  display: flex;
-  max-inline-size: 100%;
-  text-align: start;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem;
-  border: 0;
+.legend-region {
+  display: grid;
+  align-content: start;
+  gap: 0.625rem;
+}
+
+.legend-region > strong {
   font-size: 0.875rem;
 }
 
-.legend-item[aria-pressed="false"] {
-  text-decoration: line-through;
+.legend-item {
+  align-items: center;
+  gap: 0.5rem;
+  display: flex;
+  max-inline-size: 100%;
+  padding: 0.4rem;
+  border: 0;
+  text-align: start;
+  font-size: 0.875rem;
+}
+
+.legend-item small {
+  display: block;
+  margin-block-start: 0.25rem;
+  color: var(--muted);
 }
 
 .legend-swatch {
@@ -308,16 +310,8 @@
   border-block-start: 3px solid var(--series-color);
 }
 
-.legend-item.series-1 .legend-swatch {
+.legend-item[data-source="MARKET"] .legend-swatch {
   border-block-start-style: dashed;
-}
-
-.legend-item.series-2 .legend-swatch {
-  border-block-start-style: dotted;
-}
-
-.legend-item.series-3 .legend-swatch {
-  border-block-start-style: double;
 }
 
 .chart-detail {
@@ -332,10 +326,31 @@
 }
 
 .chart-prices {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
   gap: 1.5rem;
+  display: grid;
   margin-block-start: 1.5rem;
+}
+
+.chart-region > h3 {
+  padding-block-end: 0.75rem;
+  border-block-end: 2px solid var(--series-color);
+}
+
+.chart-region-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.chart-region-sources h4 {
+  margin-block: 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.trend-section td {
+  min-inline-size: 13rem;
 }
 
 .chart-note {
@@ -348,8 +363,8 @@
 }
 
 table {
-  inline-size: 100%;
   border-collapse: collapse;
+  inline-size: 100%;
 }
 
 caption {
@@ -378,30 +393,176 @@ th {
   scroll-margin-block-start: 1.5rem;
 }
 
-.comparison-row {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr;
-  gap: 1.5rem;
-  padding: 1.5rem 1rem;
+.comparison-sort {
+  inline-size: min(100%, 21rem);
+}
+
+.comparison-scroll {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.comparison-table {
+  table-layout: fixed;
+  min-inline-size: 32rem;
+}
+
+.comparison-table caption {
+  padding: 1rem 1.25rem;
   border-block-end: 1px solid var(--line);
 }
 
-.comparison-row h3 {
-  margin-block-end: 0.5rem;
+.comparison-table th,
+.comparison-table td {
+  padding: 1.25rem;
 }
 
-.comparison-row small {
-  color: var(--muted);
-}
-
-.base-row {
+.comparison-table thead th {
   background: var(--tint);
-  border-radius: 0.75rem;
+  vertical-align: bottom;
+}
+
+.comparison-region {
+  inline-size: 34%;
+}
+
+.comparison-column,
+.comparison-cell {
+  text-align: end;
+}
+
+.comparison-column > span,
+.comparison-column > small {
+  display: block;
+}
+
+.comparison-column > span:first-child {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.comparison-column > small {
+  margin-block-start: 0.25rem;
+  font-weight: 400;
+}
+
+.comparison-period {
+  margin-block-start: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.comparison-region-name {
+  display: block;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 550;
+}
+
+.comparison-base-label {
+  display: inline-block;
+  margin-block-start: 0.5rem;
+  color: var(--forest);
+  font-size: 0.75rem;
+}
+
+.comparison-base-button {
+  display: block;
+  margin-block-start: 0.25rem;
+  text-align: start;
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.comparison-table .base-row > * {
+  background: var(--tint);
+}
+
+.comparison-cell-value,
+.comparison-missing {
+  flex-direction: column;
+  align-items: end;
+  gap: 0.375rem;
+  display: flex;
+}
+
+.comparison-price {
+  max-inline-size: 100%;
+  padding: 0;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 0.25em;
+  font-size: clamp(1.125rem, 2.5vw, 1.75rem);
+  font-weight: 550;
+}
+
+.comparison-price:hover {
+  color: var(--forest);
+  background: transparent;
+  text-decoration-color: currentcolor;
+}
+
+.comparison-price small {
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.comparison-date,
+.comparison-missing {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.comparison-difference {
+  font-size: 0.875rem;
+}
+
+.comparison-lowest {
+  padding: 0.2rem 0.4rem;
+  color: var(--forest);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+}
+
+.comparison-note {
+  margin-block: 1rem 0;
+  font-size: 0.8rem;
+}
+
+@media (width<=620px) {
+  .comparison-table {
+    min-inline-size: 20rem;
+  }
+
+  .comparison-table th,
+  .comparison-table td {
+    padding: 0.875rem 0.5rem;
+  }
+
+  .comparison-region-name {
+    hyphens: auto;
+    font-size: 0.8125rem;
+  }
+
+  .comparison-column > span:first-child {
+    font-size: 0.8rem;
+  }
 }
 
 .archive-info {
-  padding-block: 2rem;
   margin-block: 2rem;
+  padding-block: 2rem;
   border-block: 1px solid var(--line);
 }
 
@@ -410,18 +571,17 @@ th {
 }
 
 .source-updates {
-  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: 1rem;
+  display: grid;
   padding: 0;
   list-style: none;
 }
 
-.source-updates li,
-.coverage li {
-  display: flex;
+.source-updates li {
   flex-direction: column;
   gap: 0.35rem;
+  display: flex;
   padding-block: 0.75rem;
   font-size: 0.875rem;
 }
@@ -430,15 +590,10 @@ th {
   color: var(--muted);
 }
 
-.coverage ul {
-  padding: 0;
-  list-style: none;
-}
-
 .observation-dialog {
   position: fixed;
-  inline-size: min(44rem, calc(100% - 2rem));
   max-block-size: calc(100% - 2rem);
+  inline-size: min(44rem, 100% - 2rem);
   padding: 2rem;
   overflow-y: auto;
   color: var(--ink);
@@ -452,9 +607,9 @@ th {
 }
 
 .provenance-list {
-  display: grid;
   grid-template-columns: 1fr 1.5fr;
   gap: 0.75rem 1.5rem;
+  display: grid;
   margin-block: 2rem;
 }
 
@@ -467,48 +622,36 @@ th {
 }
 
 .publication-links {
-  display: flex;
   flex-wrap: wrap;
   gap: 1rem;
+  display: flex;
   margin-block: 1.5rem;
 }
 
 .site-footer {
-  display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 1rem;
+  display: flex;
   padding-block: 1.5rem 2.5rem;
   color: var(--muted);
   font-size: 0.875rem;
 }
 
-@media (width <= 900px) {
+@media (width<=900px) {
   .overview {
     grid-template-columns: 1fr 1fr;
   }
-
-  .overview-primary {
-    grid-column: 1 / -1;
-  }
-
-  .comparison-row {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .comparison-row > div:first-child {
-    grid-column: 1 / -1;
-  }
 }
 
-@media (width <= 620px) {
+@media (width<=620px) {
   .hero {
     padding-block-start: 2rem;
   }
 
   .site-header {
-    padding-block: 1rem;
     gap: 0.5rem;
+    padding-block: 1rem;
   }
 
   .site-header nav {
@@ -529,15 +672,6 @@ th {
     font-size: 1.4rem;
   }
 
-  .comparison-row {
-    grid-template-columns: 1fr;
-    padding-inline: 0.75rem;
-  }
-
-  .comparison-row > div:first-child {
-    grid-column: auto;
-  }
-
   .observation-dialog {
     padding: 1.25rem;
   }
@@ -549,5 +683,136 @@ th {
 
   .provenance-list dd {
     margin-block-end: 0.75rem;
+  }
+}
+
+.overview-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  display: grid;
+  margin-block-start: 1.5rem;
+  padding-block-start: 1.5rem;
+  border-block-start: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+
+.overview-stats .stat-value {
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+}
+
+@media (width<=620px) {
+  .overview-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.overview > div {
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  display: grid;
+}
+
+.overview-price {
+  min-block-size: 12rem;
+}
+
+.overview-price > .muted {
+  font-size: 0.875rem;
+}
+
+.overview-stats > div {
+  grid-template-rows: minmax(2.75rem, auto) minmax(3.5rem, auto) minmax(4rem, auto) minmax(
+      1.5rem,
+      auto
+    );
+  align-content: start;
+  display: grid;
+}
+
+.overview-stat-value {
+  min-block-size: 3.5rem;
+}
+
+@media (width<=620px) {
+  .overview-price {
+    min-block-size: 18rem;
+  }
+
+  .overview-stats > div {
+    grid-template-rows: minmax(2.75rem, auto) minmax(4.5rem, auto) minmax(4.5rem, auto) minmax(
+        3rem,
+        auto
+      );
+  }
+}
+
+.refueling-callout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+  margin-block: 3rem;
+  padding: 2rem 2.5rem;
+  color: var(--surface);
+  background: var(--forest);
+  border-radius: var(--radius);
+}
+
+.refueling-callout .eyebrow,
+.refueling-callout p {
+  color: var(--on-dark);
+}
+
+.refueling-callout p:last-child {
+  margin-block-end: 0;
+}
+
+.refueling-link {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 1rem;
+  min-block-size: 3rem;
+  padding: 0.875rem 1.25rem;
+  color: var(--forest);
+  background: var(--surface);
+  border-radius: 0.65rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.refueling-link:hover {
+  background: var(--tint);
+}
+
+.refueling-link:focus-visible {
+  outline-color: var(--on-dark);
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
+  margin-block-end: 1rem;
+  color: var(--forest);
+  font-size: 0.875rem;
+}
+
+.refueling-page .calculator {
+  margin-block: 2rem 4rem;
+}
+
+.site-header nav a[aria-current="page"] {
+  color: var(--forest);
+  font-weight: 600;
+}
+
+@media (width <= 620px) {
+  .refueling-callout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+    padding: 1.5rem;
   }
 }

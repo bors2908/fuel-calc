@@ -3,12 +3,10 @@ openapi: 3.0.1
 info:
   title: Fuel Calc API
   description: |-
-    REST API MVP. Нет авторизации. Все цены относятся к региональным средним.
+    REST API MVP сравнения цен и расчёта стоимости заправки. OFFICIAL — недельные данные Росстата с резервом rustata; MARKET — дневные индексы BenzUp.
 
-    Перед ручным вызовом получите GET /api/v1/regions и используйте точные строковые data[].code из ответа. Короткие территориальные коды не преобразуются в коды справочника. REGION_FROM_CATALOG в примере POST — шаблон, который нужно заменить кодом из ответа; готового статического списка регионов в спецификации нет.
-
-    Массивы в query передаются одним CSV-параметром без пробелов, кавычек и скобок; в JSON — обычными массивами. Все обязательные фильтры нужно заполнить. Необязательные dataVersion и expectedSnapshotId без полученного значения следует полностью опустить. Объём передаётся строкой, например "600". Причина 400 указана в details[].field/code/message ответа.
-  version: 0.4.0
+    Коды регионов берутся из GET /api/v1/regions и передаются строками без преобразования. Массивы query передаются одним CSV-параметром без пробелов; в JSON — обычными массивами. Объём передаётся десятичной строкой, например "600".
+  version: 0.5.0
 
 servers:
   - url: http://localhost:8080
@@ -26,7 +24,15 @@ paths:
       operationId: listRegions
       summary: List regions
       description: |-
-        Возвращает весь небольшой справочник. Поиск по названию выполняется в UI. Сортировка по названию, затем по коду; пагинации нет.
+        Возвращает территории с хотя бы одним сохранённым наблюдением любого источника, топлива и даты: okatoCode и name. includeEmptyRegions=true включает также территории без данных. Сортировка по имени, затем ОКАТО. Каталог обновляется на старте и раз в неделю, неизменившаяся выдача не перезаписывается.
+      parameters:
+        - name: includeEmptyRegions
+          in: query
+          description: Включить территории без сохранённых наблюдений.
+          required: false
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: Successful response
@@ -52,7 +58,7 @@ paths:
       operationId: listFuelTypes
       summary: List fuel types
       description: |-
-        Возвращает все поддерживаемые виды топлива с названиями.
+        Возвращает enum топлива, название и rosstatCode из справочника товаров Витрины.
       responses:
         '200':
           description: Successful response
@@ -63,57 +69,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FuelTypeList'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-
-  ###########################################################################
-  # Fuel Prices
-  ###########################################################################
-  /api/v1/fuel-prices/coverage:
-    get:
-      tags:
-        - Fuel prices
-      operationId: getFuelPriceCoverage
-      summary: Get archive coverage
-      description: |-
-        Пакетное покрытие архива по всем запрошенным комбинациям. Не зависит от ранее загруженных справочников или выбранного диапазона.
-      parameters:
-        - $ref: '#/components/parameters/FilterRegionCode'
-
-        - $ref: '#/components/parameters/PreferredSource'
-
-        - name: filterFuelType
-          in: query
-          description: Необязательный CSV-список без пробелов, например DIESEL,AI_92. Без параметра — все три вида топлива; пустое значение не передавать.
-          required: false
-          style: form
-          explode: false
-          schema:
-            type: array
-            items:
-              $ref: '#/components/schemas/FuelType'
-            minItems: 1
-            maxItems: 3
-            uniqueItems: true
-
-        - $ref: '#/components/parameters/DataVersion'
-
-      responses:
-        '200':
-          description: Successful response
-          headers:
-            Cache-Control:
-              $ref: '#/components/headers/NoStore'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CoverageList'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '409':
-          $ref: '#/components/responses/DataVersionChanged'
         '500':
           $ref: '#/components/responses/InternalError'
         '503':
@@ -133,7 +88,7 @@ paths:
 
         - $ref: '#/components/parameters/FilterRegionCode'
 
-        - $ref: '#/components/parameters/PreferredSource'
+        - $ref: '#/components/parameters/Source'
 
         - $ref: '#/components/parameters/FilterFuelType'
 
@@ -178,7 +133,7 @@ paths:
 
         - $ref: '#/components/parameters/FilterRegionCode'
 
-        - $ref: '#/components/parameters/PreferredSource'
+        - $ref: '#/components/parameters/Source'
 
         - $ref: '#/components/parameters/FilterFuelType'
 
@@ -223,7 +178,7 @@ paths:
 
         - $ref: '#/components/parameters/FilterRegionCode'
 
-        - $ref: '#/components/parameters/PreferredSource'
+        - $ref: '#/components/parameters/Source'
 
         - $ref: '#/components/parameters/FilterFuelType'
 
@@ -288,7 +243,8 @@ paths:
       parameters:
         - name: observationId
           in: path
-          description: Значение observationId доступной цены из overview, trend или comparison. Непрозрачный ID неизменяемого наблюдения; сгенерированное клиентом значение string не является существующим ID и даст 404.
+          description: Значение observationId доступной цены из overview, trend или comparison. Непрозрачный ID неизменяемого наблюдения;
+            сгенерированное клиентом значение string не является существующим ID и даст 404.
           required: true
           schema:
             type: string
@@ -324,7 +280,7 @@ paths:
       operationId: calculateRefueling
       summary: Calculate refueling costs
       description: |-
-        Чистый расчёт по архиву, без сохранения заказа. Полный selection позволяет вызвать напрямую. Сервер выбирает текущий общий срез, рассчитывает все регионы и возвращает сравнение и суммы в едином массиве comparison.data. expectedSnapshotId не обязателен и не заменяет selection. При изменении среза возвращается 200 с snapshotChanged=true; при отсутствии среза — 422.
+        Один запрос возвращает два независимых расчёта: OFFICIAL/WEEKLY первым, MARKET/DAILY вторым. Для каждого источника выбирается своя последняя общая дата регионов не позднее selection.date, по всей сохранённой истории. В context обе границы dateFrom/dateTo равны запрошенной дате; фактическая дата цены находится в comparison.period. При отсутствии данных соответствующий результат имеет статус NO_DATA или NO_COMMON_PERIOD и null вместо суммы и сравнения. Ответ 200 также при отсутствии обоих рядов. expectedSnapshotIds сравниваются отдельно по источникам. Все результаты читаются из одной ревизии архива; ничего не сохраняется.
       requestBody:
         description: Полный выбор и объём для расчёта.
         required: true
@@ -344,8 +300,6 @@ paths:
                 $ref: '#/components/schemas/RefuelingCalculation'
         '400':
           $ref: '#/components/responses/InvalidInput'
-        '422':
-          $ref: '#/components/responses/CalculationUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
         '503':
@@ -356,7 +310,7 @@ components:
     BaseRegionCode:
       name: baseRegionCode
       in: query
-      description: Точный data[].code из GET /api/v1/regions для основного региона; входит в filterRegionCode.
+      description: Точный data[].okatoCode из GET /api/v1/regions для основного региона; входит в filterRegionCode.
       required: true
       schema:
         $ref: '#/components/schemas/RegionCode'
@@ -364,7 +318,8 @@ components:
     FilterRegionCode:
       name: filterRegionCode
       in: query
-      description: От 1 до 4 точных data[].code из GET /api/v1/regions, включая основной. Один CSV-параметр с разделителем-запятой, без пробелов, кавычек и JSON-скобок. Повтор ключа, пустой список, пустые элементы и дубликаты недопустимы.
+      description: От 1 до 4 точных data[].okatoCode из GET /api/v1/regions, включая основной. Один CSV-параметр с разделителем-запятой, без
+        пробелов, кавычек и JSON-скобок. Повтор ключа, пустой список, пустые элементы и дубликаты недопустимы.
       required: true
       style: form
       explode: false
@@ -396,7 +351,8 @@ components:
     FilterDateTo:
       name: filterDateTo
       in: query
-      description: Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow).
+      description: Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа
+        API (Europe/Moscow).
       required: true
       schema:
         type: string
@@ -411,13 +367,13 @@ components:
       schema:
         $ref: '#/components/schemas/Frequency'
 
-    PreferredSource:
-      name: preferredSource
+    Source:
+      name: source
       in: query
-      description: Выбранный пользователем канал. Сначала используется его цена региона/топлива/периода, затем фиксированный fallbackOrder. Сохранённые данные не меняются, внешние API не вызываются.
+      description: Источник цен. OFFICIAL поддерживает WEEKLY; MARKET поддерживает DAILY. Внешние API при чтении не вызываются.
       required: true
       schema:
-        $ref: '#/components/schemas/PriceSource'
+        $ref: "#/components/schemas/PriceSource"
 
     DataVersion:
       name: dataVersion
@@ -459,16 +415,6 @@ components:
 
     DataVersionChanged:
       description: dataVersion уже не соответствует опубликованной ревизии. Передана currentDataVersion.
-      headers:
-        Cache-Control:
-          $ref: '#/components/headers/NoStore'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
-    CalculationUnavailable:
-      description: Нет цены единственного региона или общего среза всех выбранных регионов.
       headers:
         Cache-Control:
           $ref: '#/components/headers/NoStore'
@@ -591,7 +537,8 @@ components:
     # Reference Data
     ###########################################################################
     RegionCode:
-      description: Точное строковое значение data[].code из GET /api/v1/regions. Не название региона, не короткий территориальный код и не код канала загрузки. Код сохраняется целиком, включая ведущие нули; существование проверяется по справочнику БД.
+      description: Точное строковое значение data[].okatoCode из GET /api/v1/regions. Не название региона, не короткий территориальный код и не
+        код канала загрузки. Код сохраняется целиком, включая ведущие нули; существование проверяется по справочнику БД.
       type: string
       minLength: 1
       maxLength: 32
@@ -605,30 +552,36 @@ components:
         - AI_95
 
     RegionRef:
-      description: Регион с отображаемым названием.
+      description: Территория из полного ОКАТО Витрины, включённая в официальную выборку «Россия + ФО + регионы без городов».
       required:
-        - code
+        - okatoCode
         - name
       type: object
       properties:
-        code:
-          $ref: '#/components/schemas/RegionCode'
+        okatoCode:
+          $ref: "#/components/schemas/RegionCode"
         name:
           type: string
           minLength: 1
 
     FuelTypeRef:
-      description: Вид топлива с отображаемым названием.
+      description: Вид топлива и его код в справочнике товаров Витрины Росстата.
       required:
         - code
         - name
+        - rosstatCode
       type: object
       properties:
         code:
-          $ref: '#/components/schemas/FuelType'
+          $ref: "#/components/schemas/FuelType"
         name:
           type: string
-          minLength: 1
+        rosstatCode:
+          type: string
+          enum:
+            - "7804"
+            - "7802"
+            - "7803"
 
     RegionList:
       description: Полный список субъектов РФ по названию, затем по коду; поиск по названию выполняется в UI.
@@ -662,40 +615,15 @@ components:
     # Sources
     ###########################################################################
     PriceSource:
-      description: |-
-        Канал доставки региональной цены, независимо от publisher. Три позиции слайдера: Росстат, rustata, BenzUp.
+      description: "OFFICIAL — недельные официальные цены: Витрина Росстата, при недоступности — rustata. MARKET — дневные региональные индексы
+        BenzUp. Источники не подменяют друг друга."
       type: string
       enum:
-        - ROSSTAT
-        - RUSTATA
-        - BENZUP
-
-    SourceFallbackOrder:
-      description: |-
-        Полная цепочка с preferredSource первым. ROSSTAT: ROSSTAT,RUSTATA,BENZUP; RUSTATA: RUSTATA,ROSSTAT,BENZUP; BENZUP: BENZUP,RUSTATA,ROSSTAT. Backend выбирает цену той же ячейки; цепочка не задаётся клиентом.
-      type: array
-      items:
-        $ref: '#/components/schemas/PriceSource'
-      minItems: 3
-      maxItems: 3
-      uniqueItems: true
-
-    SourceLabel:
-      description: Фактический канал цены и его название. Полные ссылки доступны в подробностях наблюдения.
-      required:
-        - code
-        - name
-      type: object
-      properties:
-        code:
-          $ref: '#/components/schemas/PriceSource'
-        name:
-          type: string
-          minLength: 1
-      additionalProperties: false
+        - OFFICIAL
+        - MARKET
 
     SourceRef:
-      description: Источник или канал получения с названием; дополнительных запросов для его подписи не нужно.
+      description: Фактический поставщик наблюдения. Для OFFICIAL — ROSSTAT или RUSTATA, для MARKET — BENZUP.
       required:
         - code
         - name
@@ -713,110 +641,32 @@ components:
           format: uri
           nullable: true
 
-    RegionalPriceSample:
-      description: Параметры среднего региональных индексов BenzUp. measurementCount — число успешных замеров; дневная цена — их среднее арифметическое. Недельная/месячная цена — среднее доступных дневных средних с равным весом дней. dayCount <= expectedDayCount; меньшее число означает неполное покрытие. История начинается с фактического сбора, прошлые дни не заполняются сегодняшними ценами. Округление до 6 знаков HALF_UP; collectedAt — последний замер, дата публикации поставщиком неизвестна.
-      required:
-        - policyCode
-        - measurementCount
-        - dayCount
-        - expectedDayCount
-        - collectedAt
-      type: object
-      properties:
-        policyCode:
-          type: string
-          minLength: 1
-          example: BENZUP_DAILY_MEAN_V1
-        measurementCount:
-          type: integer
-          format: int32
-          minimum: 1
-        dayCount:
-          type: integer
-          format: int32
-          minimum: 1
-          maximum: 31
-        expectedDayCount:
-          type: integer
-          format: int32
-          minimum: 1
-          maximum: 31
-        collectedAt:
-          type: string
-          format: date-time
-
-    SourceSummary:
-      description: Краткое происхождение цены. provider — фактический канал после fallback. updateKey ссылается на sourceUpdates того же ответа. Для официальной статистики sample отсутствует; для BenzUp методика и число замеров обязательны. Полные сведения о публикации доступны через observationId.
-      required:
-        - provider
-        - updateKey
-        - aggregationMethod
-      type: object
-      oneOf:
-        - properties:
-            aggregationMethod:
-              type: string
-              enum:
-                - OFFICIAL_STATISTICS
-          not:
-            required:
-              - sample
-        - required:
-            - sample
-          properties:
-            aggregationMethod:
-              type: string
-              enum:
-                - REGIONAL_INDEX_MEAN
-      properties:
-        provider:
-          $ref: '#/components/schemas/SourceLabel'
-        updateKey:
-          type: string
-          minLength: 1
-        aggregationMethod:
-          type: string
-          enum:
-            - OFFICIAL_STATISTICS
-            - REGIONAL_INDEX_MEAN
-        sample:
-          $ref: '#/components/schemas/RegionalPriceSample'
-      additionalProperties: false
-
     SourceUpdate:
-      description: Состояние обновления потока. READY не утверждает, что наблюдение относится к сегодняшнему дню. Пояснение UI выбирает по status. Несколько потоков одного канала могут иметь разные состояния.
       required:
-        - provider
+        - source
         - frequency
         - status
         - lastSuccessAt
-        - nextExpectedPublicationAt
       type: object
       properties:
-        provider:
-          $ref: '#/components/schemas/PriceSource'
+        source:
+          $ref: "#/components/schemas/PriceSource"
         frequency:
-          $ref: '#/components/schemas/Frequency'
+          $ref: "#/components/schemas/Frequency"
         status:
           type: string
           enum:
             - READY
-            - DELAYED
             - UNAVAILABLE
             - UNKNOWN
         lastSuccessAt:
           type: string
           format: date-time
           nullable: true
-        nextExpectedPublicationAt:
-          type: string
-          format: date-time
-          nullable: true
-      additionalProperties: false
 
     SourceUpdates:
       description: |-
-        Состояния потоков запрошенных частот, по одному на ключ потока. Ключ непрозрачен: UI использует source.updateKey цены. При отсутствии цены статус выбранного канала определяется по provider и frequency записей карты. Карта может быть пустой, если потоки ещё не созданы; тогда состояние неизвестно. Отсутствие данных не скрывает сведения о недоступном источнике.
+        Состояние загрузки выбранной периодичности. Ключи — OFFICIAL или MARKET. Ошибка загрузки не удаляет сохранённые цены.
       type: object
       additionalProperties:
         $ref: '#/components/schemas/SourceUpdate'
@@ -825,11 +675,11 @@ components:
     # Fuel Prices
     ###########################################################################
     Frequency:
+      description: WEEKLY доступна для OFFICIAL, DAILY — для MARKET. Несовместимая пара source/frequency возвращает 400.
       type: string
       enum:
         - DAILY
         - WEEKLY
-        - MONTHLY
 
     PriceBasis:
       description: |-
@@ -845,8 +695,7 @@ components:
         - REGION_NAME
 
     PriceSelection:
-      description: |-
-        Полный входной выбор, включая обязательный preferredSource для всех блоков и расчёта. regionCodes включает baseRegionCode. Обе даты включительны; dateFrom <= dateTo <= serverDate. Показатель фиксирован: REGIONAL_CONSUMER_AVERAGE.
+      description: Выбор регионов, топлива, диапазона дат и источника. Обе даты включительны; dateFrom <= dateTo <= serverDate.
       required:
         - baseRegionCode
         - regionCodes
@@ -854,20 +703,20 @@ components:
         - dateFrom
         - dateTo
         - frequency
-        - preferredSource
+        - source
       type: object
       properties:
         baseRegionCode:
-          $ref: '#/components/schemas/RegionCode'
+          $ref: "#/components/schemas/RegionCode"
         regionCodes:
           type: array
           items:
-            $ref: '#/components/schemas/RegionCode'
+            $ref: "#/components/schemas/RegionCode"
           minItems: 1
           maxItems: 4
           uniqueItems: true
         fuelType:
-          $ref: '#/components/schemas/FuelType'
+          $ref: "#/components/schemas/FuelType"
         dateFrom:
           type: string
           format: date
@@ -875,13 +724,13 @@ components:
           type: string
           format: date
         frequency:
-          $ref: '#/components/schemas/Frequency'
-        preferredSource:
-          $ref: '#/components/schemas/PriceSource'
+          $ref: "#/components/schemas/Frequency"
+        source:
+          $ref: "#/components/schemas/PriceSource"
       additionalProperties: false
 
     PriceContext:
-      description: Нормализованный выбор и все подписи для показа ответа без загрузки справочников. key включает preferredSource и зависит от выбора, но не от dataVersion и сортировки.
+      description: Нормализованный выбор. key зависит от параметров выбора; dataVersion отражает изменения архива.
       required:
         - key
         - baseRegion
@@ -890,8 +739,7 @@ components:
         - dateFrom
         - dateTo
         - frequency
-        - preferredSource
-        - fallbackOrder
+        - source
         - basis
         - unit
       type: object
@@ -900,15 +748,15 @@ components:
           type: string
           minLength: 1
         baseRegion:
-          $ref: '#/components/schemas/RegionRef'
+          $ref: "#/components/schemas/RegionRef"
         regions:
           type: array
           items:
-            $ref: '#/components/schemas/RegionRef'
+            $ref: "#/components/schemas/RegionRef"
           minItems: 1
           maxItems: 4
         fuelType:
-          $ref: '#/components/schemas/FuelTypeRef'
+          $ref: "#/components/schemas/FuelTypeRef"
         dateFrom:
           type: string
           format: date
@@ -916,20 +764,19 @@ components:
           type: string
           format: date
         frequency:
-          $ref: '#/components/schemas/Frequency'
-        preferredSource:
-          $ref: '#/components/schemas/PriceSource'
-        fallbackOrder:
-          $ref: '#/components/schemas/SourceFallbackOrder'
+          $ref: "#/components/schemas/Frequency"
+        source:
+          $ref: "#/components/schemas/PriceSource"
         basis:
-          $ref: '#/components/schemas/PriceBasis'
+          $ref: "#/components/schemas/PriceBasis"
         unit:
           type: string
           enum:
             - RUB/L
 
     PricePeriod:
-      description: Единый период региональных наблюдений всех трёх каналов. Фильтрация идёт по referenceDate. Границы недельного периода неизвестного охвата равны null.
+      description: Единый период региональных наблюдений всех трёх каналов. Фильтрация идёт по referenceDate. Границы недельного периода
+        неизвестного охвата равны null.
       required:
         - key
         - frequency
@@ -966,7 +813,8 @@ components:
         - NO_OBSERVATION_FOR_PERIOD
 
     AvailablePriceCell:
-      description: Доступная цена с кратким происхождением; missingReason всегда null. Состояние потока находится в sourceUpdates, последняя доступная дата — на уровне ряда, строки или сводки.
+      description: Доступная цена с кратким происхождением; missingReason всегда null. Состояние потока находится в sourceUpdates, последняя
+        доступная дата — на уровне ряда, строки или сводки.
       required:
         - priceRubPerLiter
         - observationId
@@ -983,7 +831,7 @@ components:
         period:
           $ref: '#/components/schemas/PricePeriod'
         source:
-          $ref: '#/components/schemas/SourceSummary'
+          $ref: "#/components/schemas/PriceSource"
         missingReason:
           type: string
           nullable: true
@@ -992,7 +840,8 @@ components:
       additionalProperties: false
 
     MissingPriceCell:
-      description: Явный пропуск с обязательной причиной. Цена и ID всегда null, источник отсутствует. Период присутствует у пропущенной точки календаря.
+      description: Явный пропуск с обязательной причиной. Цена и ID всегда null, источник отсутствует. Период присутствует у пропущенной точки
+        календаря.
       required:
         - priceRubPerLiter
         - observationId
@@ -1033,70 +882,9 @@ components:
           required:
             - period
 
-    Coverage:
-      description: |-
-        Границы всего архива после fallback, одна точка на период. observationCount=0 означает отсутствие данных: даты null, latestSource опущен. Наличие границ не гарантирует непрерывности истории. Состояния потоков находятся в sourceUpdates ответа.
-      required:
-        - region
-        - fuelType
-        - frequency
-        - firstAvailableDate
-        - lastAvailableDate
-        - observationCount
-      type: object
-      properties:
-        region:
-          $ref: '#/components/schemas/RegionRef'
-        fuelType:
-          $ref: '#/components/schemas/FuelTypeRef'
-        frequency:
-          $ref: '#/components/schemas/Frequency'
-        firstAvailableDate:
-          type: string
-          format: date
-          nullable: true
-        lastAvailableDate:
-          type: string
-          format: date
-          nullable: true
-        observationCount:
-          type: integer
-          format: int32
-          minimum: 0
-        latestSource:
-          $ref: '#/components/schemas/PriceSource'
-      additionalProperties: false
-
-    CoverageList:
-      description: Полное произведение запрошенных регионов, видов топлива и двух частот, включая пустые комбинации.
-      required:
-        - meta
-        - basis
-        - preferredSource
-        - fallbackOrder
-        - data
-        - sourceUpdates
-      type: object
-      properties:
-        meta:
-          $ref: '#/components/schemas/ApiMeta'
-        basis:
-          $ref: '#/components/schemas/PriceBasis'
-        preferredSource:
-          $ref: '#/components/schemas/PriceSource'
-        fallbackOrder:
-          $ref: '#/components/schemas/SourceFallbackOrder'
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/Coverage'
-          minItems: 2
-          maxItems: 36
-        sourceUpdates:
-          $ref: '#/components/schemas/SourceUpdates'
-
     PriceChange:
-      description: Изменение от startPrice до latestPrice той же сводки. Конечная цена отдельно не дублируется. При одной/нуле точек разницы null; при двух и нулевой начальной цене абсолютная разница задана, percent=null.
+      description: Изменение от startPrice до latestPrice той же сводки. Конечная цена отдельно не дублируется. При одной/нуле точек разницы null;
+        при двух и нулевой начальной цене абсолютная разница задана, percent=null.
       required:
         - status
         - startPrice
@@ -1127,7 +915,8 @@ components:
         - NO_DATA
 
     ComparisonSummary:
-      description: Данные карточки минимальной цены за общий срез. lowestDifferenceRubPerLiter = минимум минус цена основного региона. Для SINGLE_REGION нет минимума или разницы; UI предлагает добавить регионы.
+      description: Данные карточки минимальной цены за общий срез. lowestDifferenceRubPerLiter = минимум минус цена основного региона. Для
+        SINGLE_REGION нет минимума или разницы; UI предлагает добавить регионы.
       required:
         - status
         - snapshotId
@@ -1222,7 +1011,8 @@ components:
             $ref: '#/components/schemas/PriceSeriesPoint'
 
     PriceTrend:
-      description: Один ответ для графика и таблицы всех выбранных регионов. Регионы без истории сохраняются; точки упорядочены по referenceDate, затем по ключу периода.
+      description: Один ответ для графика и таблицы всех выбранных регионов. Регионы без истории сохраняются; точки упорядочены по referenceDate,
+        затем по ключу периода.
       required:
         - meta
         - context
@@ -1244,7 +1034,8 @@ components:
           $ref: '#/components/schemas/SourceUpdates'
 
     ComparisonRow:
-      description: При сопоставимости price относится к общему периоду; иначе к последнему индивидуальному наблюдению внутри диапазона, разница null и обе метки false. У основного региона разница null.
+      description: При сопоставимости price относится к общему периоду; иначе к последнему индивидуальному наблюдению внутри диапазона, разница
+        null и обе метки false. У основного региона разница null.
       required:
         - region
         - isBase
@@ -1337,7 +1128,8 @@ components:
           $ref: '#/components/schemas/SourceUpdates'
 
     PriceObservation:
-      description: Полная панель происхождения одного неизменяемого наблюдения. price содержит цену, period, краткий source и единственный observationId. Полное происхождение находится рядом с price. publicationDate сохраняет известную дату без выдуманного времени; publishedAt задан только при известном времени публикации.
+      description: "Цена и фактический поставщик: ROSSTAT, RUSTATA или BENZUP. publicationDate — дата публикации, если поставщик её сообщает;
+        loadedAt — время загрузки."
       required:
         - region
         - fuelType
@@ -1345,71 +1137,36 @@ components:
         - unit
         - price
         - latestAvailableDate
-        - publisher
-        - providerUrl
-        - datasetId
-        - publicationId
+        - provider
         - publicationDate
-        - publishedAt
         - loadedAt
-        - publicationUrl
-        - attribution
-        - methodologyUrl
-        - note
       type: object
       properties:
         region:
-          $ref: '#/components/schemas/RegionRef'
+          $ref: "#/components/schemas/RegionRef"
         fuelType:
-          $ref: '#/components/schemas/FuelTypeRef'
+          $ref: "#/components/schemas/FuelTypeRef"
         basis:
-          $ref: '#/components/schemas/PriceBasis'
+          $ref: "#/components/schemas/PriceBasis"
         unit:
           type: string
           enum:
             - RUB/L
         price:
-          $ref: '#/components/schemas/AvailablePriceCell'
+          $ref: "#/components/schemas/AvailablePriceCell"
         latestAvailableDate:
           type: string
           format: date
-          nullable: true
-        publisher:
-          $ref: '#/components/schemas/SourceRef'
-        providerUrl:
-          type: string
-          format: uri
-          nullable: true
-        datasetId:
-          type: string
-          minLength: 1
-        publicationId:
-          type: string
           nullable: true
         publicationDate:
           type: string
           format: date
           nullable: true
-        publishedAt:
-          type: string
-          format: date-time
-          nullable: true
         loadedAt:
           type: string
           format: date-time
-        publicationUrl:
-          type: string
-          format: uri
-          nullable: true
-        attribution:
-          type: string
-        methodologyUrl:
-          type: string
-          format: uri
-          nullable: true
-        note:
-          type: string
-          nullable: true
+        provider:
+          $ref: "#/components/schemas/SourceRef"
       additionalProperties: false
 
     PriceObservationResponse:
@@ -1430,20 +1187,50 @@ components:
     ###########################################################################
     # Refueling
     ###########################################################################
+    RefuelingSelection:
+      description: Регионы, топливо и дата для обоих расчётов. Используется последняя общая цена не позднее date; date <= serverDate. Источник и периодичность определяются сервером.
+      required:
+        - baseRegionCode
+        - regionCodes
+        - fuelType
+        - date
+      type: object
+      properties:
+        baseRegionCode:
+          $ref: '#/components/schemas/RegionCode'
+        regionCodes:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/RegionCode'
+        fuelType:
+          $ref: '#/components/schemas/FuelType'
+        date:
+          type: string
+          format: date
+      additionalProperties: false
+
     RefuelingCalculateRequest:
-      description: |-
-        Самодостаточный запрос: сервер заново определяет актуальный сопоставимый срез по selection. В примере замените REGION_FROM_CATALOG на фактический code из GET /api/v1/regions в обоих полях. volumeLiters — JSON-строка с точкой. expectedSnapshotId необязателен и используется только для уведомления об изменении; без ID из comparison.snapshotId поле нужно опустить, а не передавать null или пустую строку.
+      description: Общий выбор и объём для двух расчётов. Ожидаемые ID срезов необязательны; неизвестные источники, null и пустые ID не допускаются.
       required:
         - selection
         - volumeLiters
       type: object
       properties:
         selection:
-          $ref: '#/components/schemas/PriceSelection'
+          $ref: '#/components/schemas/RefuelingSelection'
         volumeLiters:
           $ref: '#/components/schemas/VolumeLiters'
-        expectedSnapshotId:
-          $ref: '#/components/schemas/SnapshotId'
+        expectedSnapshotIds:
+          type: object
+          properties:
+            OFFICIAL:
+              $ref: '#/components/schemas/SnapshotId'
+            MARKET:
+              $ref: '#/components/schemas/SnapshotId'
+          additionalProperties: false
       additionalProperties: false
       example:
         selection:
@@ -1451,14 +1238,13 @@ components:
           regionCodes:
             - REGION_FROM_CATALOG
           fuelType: DIESEL
-          dateFrom: 2026-07-27
-          dateTo: 2026-10-25
-          frequency: WEEKLY
-          preferredSource: ROSSTAT
-        volumeLiters: '600'
+          date: '2026-10-25'
+        volumeLiters: "600"
 
     RefuelingRow:
-      description: Единая строка сравнения и стоимости. totalRub=HALF_UP(volume × точная цена, 2); differenceRub=округлённый итог минус округлённый итог основного региона. Для базового differenceRub=0.00, differenceRubPerLiter=null и relation=BASE. Другие метки и разница цены имеют тот же смысл, что в ComparisonRow.
+      description: Единая строка сравнения и стоимости. totalRub=HALF_UP(volume × точная цена, 2); differenceRub=округлённый итог минус
+        округлённый итог основного региона. Для базового differenceRub=0.00, differenceRubPerLiter=null и relation=BASE. Другие метки и
+        разница цены имеют тот же смысл, что в ComparisonRow.
       required:
         - region
         - price
@@ -1499,7 +1285,8 @@ components:
       additionalProperties: false
 
     RefuelingComparison:
-      description: Тот же срез и единый массив строк сравнения с денежными результатами. Для основного региона relation=BASE заменяет isBase. Строки содержат все цены, разницы и метки для синхронизации таблицы сравнения с расчётом.
+      description: Тот же срез и единый массив строк сравнения с денежными результатами. Для основного региона relation=BASE заменяет isBase.
+        Строки содержат все цены, разницы и метки для синхронизации таблицы сравнения с расчётом.
       allOf:
         - $ref: '#/components/schemas/ComparisonInfo'
         - type: object
@@ -1513,38 +1300,65 @@ components:
               minItems: 1
               maxItems: 4
 
-    RefuelingCalculation:
-      description: Расчёт и полное сравнение из одного согласованного чтения. snapshotChanged=null без expectedSnapshotId, иначе результат сравнения идентификаторов. Единственный массив comparison.data содержит цены, разницы, метки и суммы; отдельного data нет. Ничего не сохраняет и не требует серверной сессии.
+    RefuelingSourceCalculation:
+      description: Независимый расчёт одного источника. AVAILABLE/SINGLE_REGION содержит сумму и сравнение; NO_DATA/NO_COMMON_PERIOD — null. snapshotChanged=null без ожидаемого ID, иначе сравнение с текущим срезом, в том числе исчезнувшим.
       required:
-        - meta
         - context
-        - volumeLiters
-        - currency
+        - status
         - baseTotalRub
         - snapshotChanged
         - comparison
+      type: object
+      properties:
+        context:
+          $ref: '#/components/schemas/PriceContext'
+        status:
+          $ref: '#/components/schemas/ComparisonStatus'
+        baseTotalRub:
+          type: string
+          nullable: true
+          pattern: '^(0|[1-9][0-9]*)\.[0-9]{2}$'
+        snapshotChanged:
+          type: boolean
+          nullable: true
+        comparison:
+          type: object
+          nullable: true
+          oneOf:
+            - $ref: '#/components/schemas/RefuelingComparison'
+            - type: object
+              nullable: true
+              enum:
+                - null
+      additionalProperties: false
+
+    RefuelingCalculation:
+      description: Два расчёта из одной ревизии архива. results всегда содержит OFFICIAL первым и MARKET вторым; даты и доступность независимы.
+      required:
+        - meta
+        - volumeLiters
+        - currency
+        - results
         - sourceUpdates
       type: object
       properties:
         meta:
           $ref: '#/components/schemas/ApiMeta'
-        context:
-          $ref: '#/components/schemas/PriceContext'
         volumeLiters:
           $ref: '#/components/schemas/VolumeLiters'
         currency:
           type: string
           enum:
             - RUB
-        baseTotalRub:
-          $ref: '#/components/schemas/Money'
-        snapshotChanged:
-          type: boolean
-          nullable: true
-        comparison:
-          $ref: '#/components/schemas/RefuelingComparison'
+        results:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/RefuelingSourceCalculation'
         sourceUpdates:
           $ref: '#/components/schemas/SourceUpdates'
+      additionalProperties: false
 
     ###########################################################################
     # Errors
@@ -1583,7 +1397,6 @@ components:
             - InvalidInput
             - ResourceNotFound
             - DataVersionChanged
-            - CalculationUnavailable
             - InternalError
             - ServiceUnavailable
         message:
