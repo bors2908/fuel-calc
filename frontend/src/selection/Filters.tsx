@@ -1,36 +1,17 @@
-import { useState } from "react";
 import type { Selection } from "../api/types";
 import { frequencyNames, sourceNames } from "../api/types";
 import { defaults, presetRange } from "./model";
 import type { Catalog } from "./model";
+import { RegionSelect } from "./RegionSelect";
 import "./filters.css";
 
 type Props = {
   catalog: Catalog;
   value: Selection;
-  dirty: boolean;
-  busy: boolean;
   error: string | null;
   onChange: (value: Selection) => void;
-  onApply: () => void;
-  onCancel: () => void;
 };
-export function Filters({
-  catalog,
-  value,
-  dirty,
-  busy,
-  error,
-  onChange,
-  onApply,
-  onCancel,
-}: Props) {
-  const [search, setSearch] = useState("");
-  const regions = catalog.regions.filter(
-    (r) =>
-      r.name.toLocaleLowerCase("ru").includes(search.toLocaleLowerCase("ru")) ||
-      value.regionCodes.includes(r.code),
-  );
+export function Filters({ catalog, value, error, onChange }: Props) {
   const preset = [1, 3, 12].find((months) => {
     const range = presetRange(catalog.serverDate, months);
     return range.dateFrom === value.dateFrom && range.dateTo === value.dateTo;
@@ -46,62 +27,32 @@ export function Filters({
       className="filters"
       onSubmit={(event) => {
         event.preventDefault();
-        onApply();
       }}
       aria-label="Выбор данных"
     >
-      <div className="filter-search">
-        <label htmlFor="region-search">Найти регион</label>
-        <input
-          id="region-search"
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Начните вводить название"
-        />
-      </div>
       <div className="filter-main">
-        <div>
-          <label htmlFor="base-region">Мой регион</label>
-          <select
-            id="base-region"
-            value={value.baseRegionCode}
-            onChange={(event) => setBase(event.target.value)}
-            required
-          >
-            <option value="">Выберите регион</option>
-            {regions.map((region) => (
-              <option
-                key={region.code}
-                value={region.code}
-              >
-                {region.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="fuel">Топливо</label>
-          <select
-            id="fuel"
-            value={value.fuelType}
-            onChange={(event) => {
-              const fuel = catalog.fuels.find((f) => f.code === event.target.value);
-              if (fuel) {
-                onChange({ ...value, fuelType: fuel.code });
-              }
-            }}
-          >
+        <RegionSelect
+          regions={catalog.regions}
+          value={value.baseRegionCode}
+          onChange={setBase}
+        />
+        <fieldset className="fuel-selector">
+          <legend>Топливо</legend>
+          <div className="fuel-options">
             {catalog.fuels.map((fuel) => (
-              <option
-                key={fuel.code}
-                value={fuel.code}
-              >
-                {fuel.name}
-              </option>
+              <label key={fuel.code}>
+                <input
+                  type="radio"
+                  name="fuel"
+                  value={fuel.code}
+                  checked={value.fuelType === fuel.code}
+                  onChange={() => onChange({ ...value, fuelType: fuel.code })}
+                />
+                <span title={fuel.name}>{fuel.code === "DIESEL" ? "Дизель" : fuel.name}</span>
+              </label>
             ))}
-          </select>
-        </div>
+          </div>
+        </fieldset>
         <div>
           <label htmlFor="period">Период</label>
           <select
@@ -122,12 +73,6 @@ export function Filters({
             <option value="12">Год</option>
           </select>
         </div>
-        <button
-          className="button-primary"
-          type="submit"
-        >
-          {busy ? "Обновить выбор" : "Показать"}
-        </button>
       </div>
       <div className="date-range">
         <div>
@@ -143,7 +88,7 @@ export function Filters({
         </div>
         <span aria-hidden="true">—</span>
         <div>
-          <label htmlFor="date-to">По дату включительно</label>
+          <label htmlFor="date-to">По дату</label>
           <input
             id="date-to"
             type="date"
@@ -162,7 +107,7 @@ export function Filters({
         <fieldset>
           <legend>Дополнительные регионы</legend>
           <div className="region-options">
-            {regions
+            {catalog.regions
               .filter((r) => r.code !== value.baseRegionCode)
               .map((region) => (
                 <label key={region.code}>
@@ -231,28 +176,20 @@ export function Filters({
           указан у каждого значения.
         </p>
       </details>
-      <div className="filter-actions">
-        {dirty && <span role="status">Есть изменения в фильтрах</span>}
-        <button
-          type="button"
-          onClick={onCancel}
-        >
-          Отменить изменения
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            onChange({
-              ...defaults(catalog.serverDate),
-              baseRegionCode: value.baseRegionCode,
-              regionCodes: value.baseRegionCode ? [value.baseRegionCode] : [],
-              preferredSource: value.preferredSource,
-            })
-          }
-        >
-          Сбросить фильтры
-        </button>
-      </div>
+      <button
+        className="filter-reset"
+        type="button"
+        onClick={() =>
+          onChange({
+            ...defaults(catalog.serverDate),
+            baseRegionCode: value.baseRegionCode,
+            regionCodes: value.baseRegionCode ? [value.baseRegionCode] : [],
+            preferredSource: value.preferredSource,
+          })
+        }
+      >
+        Сбросить фильтры
+      </button>
       {error && (
         <p
           className="field-error"

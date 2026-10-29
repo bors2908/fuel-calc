@@ -8,7 +8,7 @@ export const regions = [
   { code: "01000000000", name: "Республика с очень длинным названием для проверки переноса" },
 ];
 export const fuels: Schema<"FuelTypeRef">[] = [
-  { code: "DIESEL", name: "Дизель" },
+  { code: "DIESEL", name: "Дизельное топливо" },
   { code: "AI_92", name: "АИ-92" },
   { code: "AI_95", name: "АИ-95" },
 ];

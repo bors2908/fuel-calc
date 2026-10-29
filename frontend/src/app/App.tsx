@@ -4,7 +4,6 @@ import type { Selection } from "../api/types";
 import { frequencyNames, sourceNames } from "../api/types";
 import { Filters } from "../selection/Filters";
 import {
-  defaults,
   fromContext,
   readSelection,
   selectionError,
@@ -115,7 +114,7 @@ export function App() {
 
 function Workspace({ catalog }: { catalog: Catalog }) {
   const [initial] = useState(() => readSelection(catalog));
-  const [draft, setDraft] = useState(initial.selection);
+  const [selection, setSelection] = useState(initial.selection);
   const [applied, setApplied] = useState<Selection | null>(
     initial.requested && !initial.error ? initial.selection : null,
   );
@@ -131,7 +130,7 @@ function Workspace({ catalog }: { catalog: Catalog }) {
     }
     function restore() {
       const restored = readSelection(catalog);
-      setDraft(restored.selection);
+      setSelection(restored.selection);
       setValidation(restored.error);
       setObservation(null);
       setApplied(restored.requested && !restored.error ? restored.selection : null);
@@ -146,24 +145,29 @@ function Workspace({ catalog }: { catalog: Catalog }) {
   }, [initial, catalog, load, clear]);
   // Returning to the landing URL unmounts results rather than reusing a previous selection.
   const page = applied ? prices.page : null;
-  const dirty = selectionKey(draft) !== selectionKey(applied ?? defaults(catalog.serverDate));
   const displayMatches =
     page && applied && selectionKey(fromContext(page.overview.context)) === selectionKey(applied);
-  const blocked = dirty || prices.busy || prices.calculating || !displayMatches;
-  function apply(selection: Selection, scroll = false) {
-    const error = selectionError(selection, catalog);
-    setValidation(error);
+  const blocked = Boolean(validation) || prices.busy || prices.calculating || !displayMatches;
+  function changeSelection(value: Selection, scroll = false) {
+    setSelection(value);
+    setObservation(null);
+    setFiltersOpen(!scroll);
+    const error = selectionError(value, catalog);
+    setValidation(value.baseRegionCode ? error : null);
     if (error) {
+      prices.cancelLoad();
       return;
     }
-    setObservation(null);
-    setFiltersOpen(false);
-    setDraft(selection);
-    setApplied(selection);
-    writeSelection(selection);
-    void load(selection);
+    setApplied(value);
+    writeSelection(value);
+    void load(value);
     if (scroll) {
       document.getElementById("calculator")?.scrollIntoView({ block: "start" });
+    }
+  }
+  function refresh() {
+    if (applied && !validation) {
+      void load(applied);
     }
   }
   return (
@@ -180,7 +184,8 @@ function Workspace({ catalog }: { catalog: Catalog }) {
         aria-controls="filter-panel"
         onClick={() => setFiltersOpen(!filtersOpen)}
       >
-        Изменить выбор · {sourceNames[draft.preferredSource]} · {frequencyNames[draft.frequency]}
+        Изменить выбор · {sourceNames[selection.preferredSource]} ·{" "}
+        {frequencyNames[selection.frequency]}
       </button>
       <div
         id="filter-panel"
@@ -188,19 +193,9 @@ function Workspace({ catalog }: { catalog: Catalog }) {
       >
         <Filters
           catalog={catalog}
-          value={draft}
-          dirty={dirty}
-          busy={prices.busy}
+          value={selection}
           error={validation}
-          onChange={(value) => {
-            setDraft(value);
-            setValidation(null);
-          }}
-          onCancel={() => {
-            setDraft(applied ?? defaults(catalog.serverDate));
-            setValidation(null);
-          }}
-          onApply={() => apply(draft)}
+          onChange={changeSelection}
         />
       </div>
       {prices.busy && (
@@ -210,17 +205,7 @@ function Workspace({ catalog }: { catalog: Catalog }) {
             : "Загружаем региональные цены…"}
         </Loading>
       )}
-      {prices.error && (
-        <Feedback
-          onRetry={() => {
-            if (applied) {
-              void load(applied);
-            }
-          }}
-        >
-          {prices.error}
-        </Feedback>
-      )}
+      {prices.error && <Feedback onRetry={refresh}>{prices.error}</Feedback>}
       {prices.notice && <p role="status">{prices.notice}</p>}
       {page ? (
         <div
@@ -252,13 +237,7 @@ function Workspace({ catalog }: { catalog: Catalog }) {
               className="surface"
             >
               <h2>Как менялась цена</h2>
-              <Feedback
-                onRetry={() => {
-                  if (applied) {
-                    void load(applied);
-                  }
-                }}
-              >
+              <Feedback onRetry={refresh}>
                 Не удалось загрузить историю. Сводка остаётся доступной.
               </Feedback>
             </section>
@@ -271,22 +250,17 @@ function Workspace({ catalog }: { catalog: Catalog }) {
                 void prices.sort(sorting);
               }}
               onBase={(code) =>
-                apply({ ...fromContext(page.overview.context), baseRegionCode: code }, true)
+                changeSelection(
+                  { ...fromContext(page.overview.context), baseRegionCode: code },
+                  true,
+                )
               }
               onObservation={setObservation}
             />
           ) : (
             <section id="comparison">
               <h2>Сравните регионы</h2>
-              <Feedback
-                onRetry={() => {
-                  if (applied) {
-                    void load(applied);
-                  }
-                }}
-              >
-                Не удалось загрузить сравнение.
-              </Feedback>
+              <Feedback onRetry={refresh}>Не удалось загрузить сравнение.</Feedback>
             </section>
           )}
           <Calculator
@@ -302,12 +276,8 @@ function Workspace({ catalog }: { catalog: Catalog }) {
           <ArchiveInfo
             key={`${page.overview.context.key}-${page.overview.meta.dataVersion}`}
             overview={page.overview}
-            busy={prices.busy}
-            onRefresh={() => {
-              if (applied) {
-                void load(applied);
-              }
-            }}
+            busy={prices.busy || Boolean(validation)}
+            onRefresh={refresh}
           />
           {observation && (
             <ObservationDialog

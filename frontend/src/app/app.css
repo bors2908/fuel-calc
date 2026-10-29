@@ -112,9 +112,11 @@
 }
 
 .overview {
+  --overview-value-size: clamp(2.25rem, 3.5vw, 3rem);
+
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr;
-  align-items: center;
+  align-items: start;
   gap: 2rem;
   padding-block: 2rem 3rem;
   border-block-end: 1px solid var(--line);
@@ -144,15 +146,6 @@
   color: var(--muted);
 }
 
-.overview > div:first-child .price-value > strong {
-  font-size: clamp(2.75rem, 5vw, 4rem);
-  line-height: 1.15;
-}
-
-.overview > div:first-child .price-value > strong small {
-  font-size: 1.15rem;
-}
-
 .stat-value {
   display: block;
   font-size: clamp(1.5rem, 2.5vw, 2rem);
@@ -160,6 +153,44 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.035em;
   margin-block-end: 0.5rem;
+}
+
+.overview-label {
+  margin-block-end: 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.overview .price-value > strong,
+.overview .stat-value {
+  margin-block-end: 0.5rem;
+  font-size: var(--overview-value-size);
+  line-height: 1.15;
+}
+
+.overview .price-value > strong small,
+.overview .stat-value small {
+  font-size: 1rem;
+  letter-spacing: normal;
+}
+
+.overview .price-value > span,
+.overview .source-label,
+.overview-description {
+  font-size: 0.875rem;
+}
+
+.overview > div > .muted {
+  margin-block-end: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.stat-message {
+  display: block;
+  margin-block-end: 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
 }
 
 .source-label,
@@ -296,7 +327,8 @@
 }
 
 .chart-detail > select {
-  max-inline-size: 22rem;
+  inline-size: fit-content;
+  max-inline-size: 100%;
 }
 
 .chart-prices {
@@ -456,7 +488,7 @@ th {
     grid-template-columns: 1fr 1fr;
   }
 
-  .overview > div:first-child {
+  .overview-primary {
     grid-column: 1 / -1;
   }
 

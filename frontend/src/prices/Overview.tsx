@@ -15,8 +15,8 @@ export function Overview({
       className="overview"
       aria-label="Сводка цен"
     >
-      <div>
-        <p className="eyebrow">
+      <div className="overview-primary">
+        <p className="overview-label">
           {value.context.fuelType.name} · {value.context.baseRegion.name}
         </p>
         <PriceValue
@@ -32,8 +32,8 @@ export function Overview({
         )}
       </div>
       <div>
-        <p>Изменение за период</p>
-        <strong className="stat-value">
+        <p className="overview-label">Изменение за период</p>
+        <strong className={value.change.percent !== null ? "stat-value" : "stat-message"}>
           {value.change.percent !== null
             ? `${signed(value.change.percent)}%`
             : "Недостаточно данных"}
@@ -49,13 +49,15 @@ export function Overview({
         )}
       </div>
       <div>
-        <p>Ниже среди выбранных</p>
+        <p className="overview-label">Ниже среди выбранных</p>
         {comparison.lowestPriceRubPerLiter !== null ? (
           <>
             <strong className="stat-value">
               {number(comparison.lowestPriceRubPerLiter)} <small>₽/л</small>
             </strong>
-            <p>{comparison.lowestRegions.map((region) => region.name).join(", ")}</p>
+            <p className="overview-description">
+              {comparison.lowestRegions.map((region) => region.name).join(", ")}
+            </p>
             <small>Общий период: {comparison.period?.label ?? "—"}</small>
           </>
         ) : (

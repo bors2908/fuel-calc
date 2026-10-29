@@ -56,14 +56,17 @@ export function usePrices() {
     },
     [begin, invalidateCalculation],
   );
-  const clear = useCallback(() => {
+  const cancelLoad = useCallback(() => {
     cancel();
     invalidateCalculation();
-    setPage(null);
     setError(null);
     setNotice(null);
     setBusy(false);
   }, [cancel, invalidateCalculation]);
+  const clear = useCallback(() => {
+    cancelLoad();
+    setPage(null);
+  }, [cancelLoad]);
   async function sort(sorting: Sorting) {
     if (!page) {
       return;
@@ -165,6 +168,7 @@ export function usePrices() {
     calculationError,
     notice,
     load,
+    cancelLoad,
     clear,
     sort,
     calculate,
