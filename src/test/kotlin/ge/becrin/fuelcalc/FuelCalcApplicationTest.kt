@@ -121,7 +121,7 @@ class FuelCalcApplicationTest {
         liquibase.afterPropertiesSet()
 
         assertEquals(countBefore, jdbc.queryForObject("SELECT COUNT(*) FROM db_migration_log", Long::class.java))
-        assertEquals(9L, jdbc.queryForObject("SELECT COUNT(DISTINCT filename) FROM db_migration_log", Long::class.java))
+        assertEquals(10L, jdbc.queryForObject("SELECT COUNT(DISTINCT filename) FROM db_migration_log", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM archive_state", Long::class.java))
     }
 

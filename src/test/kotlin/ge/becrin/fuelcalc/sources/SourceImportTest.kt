@@ -148,6 +148,7 @@ class SourceImportTest {
         assertEquals(alternate, catalog.byName("Тестовая Республика"))
         assertEquals(district, catalog.byName("в том числе: Тестовый авт. округ"))
         assertFailsWith<IllegalArgumentException> { catalog.replace(listOf(full, full.copy(code = "05000000000"))) }
+        assertFailsWith<IllegalArgumentException> { catalog.replace(listOf(RegionCatalog.Region("BENZUP_999", "Новый регион"))) }
         assertEquals(full, catalog.byName("Тестовая область"))
     }
 

@@ -54,17 +54,23 @@ class BenzupImportService(
             val dailyRun = runs[PriceFrequency.DAILY] ?: return
             val incoming = client.fetch()
             val collectedAt = clock.instant()
-            val missing = incoming.distinctBy { it.regionId }.filter { resolve(it.regionName) == null }
+            val regionById = incoming.distinctBy { it.regionId }.associate { it.regionId to resolve(it.regionName) }
+            val skipped = regionById.filterValues { it == null }.keys
 
-            if (missing.isNotEmpty()) {
-                store.synchronizeRegions(missing.map { RegionCatalog.Region("BENZUP_${it.regionId}", it.regionName) })
-                catalog.replace(store.savedRegions())
+            if (skipped.isNotEmpty()) {
+                log.warn("BenzUp regions outside Rosstat catalog skipped [regionIds={}]", skipped)
             }
 
-            val prices = incoming.associate { row ->
-                (checkNotNull(resolve(row.regionName)).code to row.fuelCode) to row.price
+            val mapped = incoming.mapNotNull { row ->
+                regionById[row.regionId]?.let { (it.code to row.fuelCode) to row.price }
             }
-            require(prices.size == incoming.size) { "Ambiguous BenzUp region mapping" }
+            val prices = mapped.toMap()
+
+            require(prices.size == mapped.size) { "Ambiguous BenzUp region mapping" }
+
+            if (prices.isEmpty()) {
+                throw SourceImportException("EMPTY_PUBLICATION", "BenzUp snapshot has no regions from Rosstat catalog")
+            }
 
             archive.record(dailyRun, prices, collectedAt)
 

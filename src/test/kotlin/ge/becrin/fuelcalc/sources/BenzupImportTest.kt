@@ -27,7 +27,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 @SpringBootTest(properties = [
     "imports.enabled=true", "imports.fetch-on-startup=false",
@@ -154,20 +154,48 @@ class BenzupImportTest {
     }
 
     @Test
-    fun testProviderOnlyRegionIsRegisteredWithoutInventingOfficialTerritorialCode() {
-        body.set(
-            snapshot("75").replace("Краснодарский край", "Новый регион").replace("\"region_id\":23", "\"region_id\":999")
-        )
+    fun testProviderOnlyRegionIsSkippedWithoutDiscardingKnownRegionPrices() {
+        val mixed = snapshot("60").substringBeforeLast(']') + "," + unknownRegionSnapshot().substringAfter('[')
+
+        body.set(mixed)
         importer.fetch()
         entities.flush()
 
-        assertNotNull(catalog.byCode("BENZUP_999"))
-        assertEquals(
-            "Новый регион",
-            jdbc.queryForObject("SELECT name FROM regions WHERE code = 'BENZUP_999'", String::class.java)
-        )
+        assertNull(catalog.byName("Новый регион"))
+        assertEquals(1L, count("regions"))
+        assertEquals(1L, count("benzup_measurements"))
         assertEquals(1L, count("benzup_daily_prices"))
+        assertEquals(
+            BigDecimal("60.000000"),
+            jdbc.queryForObject("SELECT price_rub_per_liter FROM benzup_daily_prices", BigDecimal::class.java)
+        )
+        assertEquals(3L, jdbc.queryForObject("SELECT COUNT(*) FROM import_runs WHERE status = 'SUCCEEDED'", Long::class.java))
     }
+
+    @Test
+    fun testSnapshotWithoutRosstatRegionsFailsWithoutChangingSavedPrices() {
+        importer.fetch()
+        body.set(unknownRegionSnapshot())
+        importer.fetch()
+        entities.flush()
+
+        assertNull(catalog.byName("Новый регион"))
+        assertEquals(1L, count("regions"))
+        assertEquals(1L, count("benzup_measurements"))
+        assertEquals(1L, count("benzup_daily_prices"))
+        assertEquals(1, jdbc.queryForObject("SELECT measurement_count FROM benzup_daily_prices", Int::class.java))
+        assertEquals(
+            BigDecimal("60.000000"),
+            jdbc.queryForObject("SELECT price_rub_per_liter FROM benzup_daily_prices", BigDecimal::class.java)
+        )
+        assertEquals(3L, jdbc.queryForObject(
+            "SELECT COUNT(*) FROM import_runs WHERE status = 'FAILED' AND error_code = 'EMPTY_PUBLICATION'",
+            Long::class.java
+        ))
+    }
+
+    private fun unknownRegionSnapshot(): String =
+        snapshot("75").replace("Краснодарский край", "Новый регион").replace("\"region_id\":23", "\"region_id\":999")
 
     private fun record(
         price: String,
