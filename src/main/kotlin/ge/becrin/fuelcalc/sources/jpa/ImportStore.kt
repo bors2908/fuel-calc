@@ -53,7 +53,7 @@ class ImportStore(
                         frequency = definition.frequency,
                         aggregationMethod =
                             if (definition.samplingPolicy == null) PriceAggregationMethod.OFFICIAL_STATISTICS
-                            else PriceAggregationMethod.STATION_SAMPLE_MEAN,
+                            else PriceAggregationMethod.REGIONAL_INDEX_MEAN,
                         samplingPolicyCode = definition.samplingPolicy
                     )
                 )

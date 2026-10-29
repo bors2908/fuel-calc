@@ -1,16 +1,14 @@
 package ge.becrin.fuelcalc
 
+import ge.becrin.fuelcalc.sources.benzup.BenzupArchiveService
 import ge.becrin.fuelcalc.prices.service.RegionalPricePublicationService
-import ge.becrin.fuelcalc.prices.service.RegionalPriceSampleService
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.model.FeedDefinition
 import ge.becrin.fuelcalc.sources.model.PreparedPublication
 import ge.becrin.fuelcalc.sources.model.PricePeriod
-import ge.becrin.fuelcalc.sources.model.RegionalDailySample
 import ge.becrin.fuelcalc.sources.model.RegionalPriceFact
 import ge.becrin.fuelcalc.sources.service.SourceImportException
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
-import ge.becrin.fuelcalc.sources.wherefuel.RegionalStationSampler
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeEntity
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeRepository
 import ge.becrin.fuelcalc.prices.PriceFrequency
@@ -75,9 +73,6 @@ class FuelCalcApplicationTest {
     private lateinit var importStore: ImportStore
 
     @Autowired
-    private lateinit var sampleService: RegionalPriceSampleService
-
-    @Autowired
     private lateinit var jdbc: JdbcTemplate
 
     @Autowired
@@ -105,14 +100,14 @@ class FuelCalcApplicationTest {
 
         assertEquals(200, response.statusCode())
         assertContains(response.body(), "\"status\":\"UP\"")
-        assertEquals(12, entityManager.metamodel.entities.size)
+        assertEquals(13, entityManager.metamodel.entities.size)
     }
 
     @Test
     fun testSeedsOnlyCatalogsAndArchiveRevision() {
         assertEquals(setOf("DIESEL", "AI_92", "AI_95"), fuelTypes.findAll().map { it.code }.toSet())
-        assertEquals(setOf("ROSSTAT", "RUSTATA", "WHEREFUEL"), jdbc.queryForList("SELECT code FROM data_sources", String::class.java).toSet())
-        assertEquals(1L, jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
+        assertEquals(setOf("ROSSTAT", "RUSTATA", "BENZUP"), jdbc.queryForList("SELECT code FROM data_sources", String::class.java).toSet())
+        assertEquals(2L, jdbc.queryForObject("SELECT revision FROM archive_state WHERE id = 1", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM regions", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM source_feeds", Long::class.java))
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM regional_price_observations", Long::class.java))
@@ -126,7 +121,7 @@ class FuelCalcApplicationTest {
         liquibase.afterPropertiesSet()
 
         assertEquals(countBefore, jdbc.queryForObject("SELECT COUNT(*) FROM db_migration_log", Long::class.java))
-        assertEquals(8L, jdbc.queryForObject("SELECT COUNT(DISTINCT filename) FROM db_migration_log", Long::class.java))
+        assertEquals(9L, jdbc.queryForObject("SELECT COUNT(DISTINCT filename) FROM db_migration_log", Long::class.java))
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM archive_state", Long::class.java))
     }
 
@@ -152,7 +147,7 @@ class FuelCalcApplicationTest {
     fun testKeepsSeparateCellsForAllThreeSources() {
         val fixture = createPriceFixture()
 
-        for (sourceCode in listOf("RUSTATA", "WHEREFUEL")) {
+        for (sourceCode in listOf("RUSTATA", "BENZUP")) {
             entityManager.persist(
                 RegionalPriceKeyEntity(
                     region = fixture.key.region,
@@ -233,7 +228,7 @@ class FuelCalcApplicationTest {
         val fixture = createPriceFixture()
         val error = assertFailsWith<DataIntegrityViolationException> {
             jdbc.update(
-                "UPDATE regional_price_observations SET sample_min_station_count = 5 WHERE id = ?",
+                "UPDATE regional_price_observations SET sample_measurement_count = 5 WHERE id = ?",
                 fixture.observation.id
             )
         }
@@ -350,34 +345,6 @@ class FuelCalcApplicationTest {
     }
 
     @Test
-    fun testDailySamplesKeepABAAndEachDayHasEqualWeight() {
-        val feed = importFeed("WHEREFUEL")
-        val run = checkNotNull(importStore.begin(feed))
-        val firstAt = Instant.parse("2026-09-01T10:00:00Z")
-        val a = RegionalDailySample("03000000000", "DIESEL", BigDecimal("60.000000"), 5, firstAt,
-            firstAt.minusSeconds(1), firstAt.minusSeconds(1), "a".repeat(64))
-        val b = a.copy(price = BigDecimal("90.000000"), collectedAt = firstAt.plusSeconds(3600), contentHash = "b".repeat(64))
-        val repeatedA = a.copy(collectedAt = firstAt.plusSeconds(7200))
-        val nextDay = a.copy(price = BigDecimal("80.000000"), stationCount = 20, collectedAt = firstAt.plusSeconds(86400),
-            oldestPriceAt = firstAt.plusSeconds(86399), newestPriceAt = firstAt.plusSeconds(86399), contentHash = "c".repeat(64))
-
-        sampleService.append(run, listOf(a))
-        sampleService.append(run, listOf(a.copy(collectedAt = firstAt.plusSeconds(1))))
-        sampleService.append(run, listOf(b))
-        sampleService.append(run, listOf(repeatedA))
-        sampleService.append(run, listOf(nextDay))
-
-        val publications = sampleService.prepare(PriceFrequency.MONTHLY, LocalDate.of(2026, 10, 1), "https://wherefuel.ru")
-        val fact = publications.single().facts.single()
-
-        assertEquals(4L, jdbc.queryForObject("SELECT COUNT(*) FROM regional_price_samples", Long::class.java))
-        assertEquals(BigDecimal("70.000000"), fact.price)
-        assertEquals(2, fact.sampleDayCount)
-        assertEquals(30, fact.sampleExpectedDayCount)
-        assertEquals(5, fact.sampleMinStationCount)
-    }
-
-    @Test
     fun testHistoryProgressCanStartAdvanceAndComplete() {
         val feed = importFeed("ROSSTAT")
         val start = LocalDate.of(2026, 1, 1)
@@ -421,8 +388,8 @@ class FuelCalcApplicationTest {
 
     private fun importFeed(provider: String): FeedDefinition {
         val feed = FeedDefinition(
-            "${provider}_WEEKLY_TEST", provider, if (provider == "WHEREFUEL") provider else "ROSSTAT", PriceFrequency.WEEKLY,
-            "test-source", if (provider == "WHEREFUEL") RegionalStationSampler.POLICY else null
+            "${provider}_WEEKLY_TEST", provider, if (provider == "BENZUP") provider else "ROSSTAT", PriceFrequency.WEEKLY,
+            "test-source", if (provider == "BENZUP") BenzupArchiveService.POLICY else null
         )
         importStore.initialize(listOf(feed))
         importStore.synchronizeRegions(listOf(RegionCatalog.Region("03000000000", "Тестовый край")))

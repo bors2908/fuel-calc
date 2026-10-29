@@ -1,0 +1,10 @@
+{
+  "result": [
+    {"region_id": 23, "region_name": "Краснодарский край", "product": "A0920", "index": "70.69", "sid": "IR-23-A0920-RU-OMTC"},
+    {"region_id": 23, "region_name": "Краснодарский край", "product": "A0950", "index": "78.12", "sid": "IR-23-A0950-RU-OMTC"},
+    {"region_id": 23, "region_name": "Краснодарский край", "product": "D0DT0", "index": "76.68", "sid": "IR-23-D0DT0-RU-OMTC"},
+    {"region_id": 23, "region_name": "Краснодарский край", "product": "A0980", "index": "102.79", "sid": "IR-23-A0980-RU-OMTC"},
+    {"region_id": 61, "region_name": "Ростовская область", "product": "D0DT0", "index": "78.27", "sid": "IR-61-D0DT0-RU-OMTC"}
+  ],
+  "error": 0
+}

@@ -17,7 +17,7 @@ export function PriceSource({
       {price.source.provider.name}
       {price.source.sample && (
         <span className="sample-label">
-          Средняя по выборке АЗС · минимум {price.source.sample.minStationCount} станций ·{" "}
+          Среднее по замерам · {price.source.sample.measurementCount} замеров ·{" "}
           {price.source.sample.dayCount}/{price.source.sample.expectedDayCount} дней
           {price.source.sample.dayCount < price.source.sample.expectedDayCount &&
             " · неполный период"}

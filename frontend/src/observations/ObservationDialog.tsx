@@ -99,7 +99,7 @@ export function ObservationDialog({ id, preferredSource, onClose }: Props) {
             <dd>
               {observation.price.source.aggregationMethod === "OFFICIAL_STATISTICS"
                 ? "Официальная статистика"
-                : "Региональная средняя по выборке АЗС"}
+                : "Среднее замеров регионального индекса BenzUp"}
             </dd>
           </dl>
           <p>{observation.attribution}</p>

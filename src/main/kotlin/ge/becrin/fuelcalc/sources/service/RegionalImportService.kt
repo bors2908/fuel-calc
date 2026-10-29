@@ -35,7 +35,7 @@ class RegionalImportService(
         require(properties.historyFrom <= LocalDate.now(clock))
         require(properties.maxResponseBytes in 1024..(64 * 1024 * 1024))
 
-        store.initialize(adapters.flatMap { adapter -> PriceFrequency.entries.map(adapter::definition) })
+        store.initialize(adapters.flatMap { adapter -> listOf(PriceFrequency.WEEKLY, PriceFrequency.MONTHLY).map(adapter::definition) })
     }
 
     fun fetch(
@@ -50,7 +50,7 @@ class RegionalImportService(
         }
 
         try {
-            for (frequency in PriceFrequency.entries) {
+            for (frequency in listOf(PriceFrequency.WEEKLY, PriceFrequency.MONTHLY)) {
                 val feed = adapter.definition(frequency)
                 val lastSuccess = store.lastSuccess(feed)
 

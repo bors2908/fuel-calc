@@ -10,6 +10,7 @@ import ge.becrin.fuelcalc.prices.jpa.RegionalPriceObservationEntity
 import ge.becrin.fuelcalc.regions.jpa.RegionEntity
 import ge.becrin.fuelcalc.fuels.jpa.FuelTypeEntity
 import ge.becrin.fuelcalc.sources.config.ImportProperties
+import ge.becrin.fuelcalc.sources.benzup.BenzupClient
 import ge.becrin.fuelcalc.sources.jpa.ImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import ge.becrin.fuelcalc.sources.rosstat.RosstatMonthlyParser
@@ -22,10 +23,6 @@ import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.RegionCatalogService
 import ge.becrin.fuelcalc.sources.service.SourceHttpClient
 import ge.becrin.fuelcalc.sources.service.SourceImportException
-import ge.becrin.fuelcalc.sources.wherefuel.RegionBoundary
-import ge.becrin.fuelcalc.sources.wherefuel.RegionalStationSampler
-import ge.becrin.fuelcalc.sources.wherefuel.StationPrice
-import ge.becrin.fuelcalc.sources.wherefuel.WhereFuelClient
 import org.jsoup.Jsoup
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.mock
@@ -191,46 +188,6 @@ class SourceImportTest {
         assertEquals(null, weekly.price("…"))
         assertEquals(BigDecimal.ZERO, weekly.price("0"))
         assertFailsWith<SourceImportException> { weekly.price("н/д?") }
-    }
-
-    @Test
-    fun testSamplerDeduplicatesAndSelectsFreshestTwenty() {
-        val prices = (1..25).map { id -> StationPrice("station-$id", "DIESEL", id.toBigDecimal(), now.minusSeconds(id.toLong())) }
-        val samples = RegionalStationSampler().sample("03000000000", prices + prices.first(), now)
-        val sample = samples.single()
-
-        assertEquals(20, sample.stationCount)
-        assertEquals(BigDecimal("10.500000"), sample.price)
-        assertEquals(sample.contentHash, RegionalStationSampler().sample("03000000000", prices.reversed(), now).single().contentHash)
-    }
-
-    @Test
-    fun testSamplerRejectsStaleFutureAndSmallSamples() {
-        val valid = (1..4).map { StationPrice("$it", "DIESEL", BigDecimal.TEN, now.minusSeconds(1)) }
-        val stale = StationPrice("stale", "DIESEL", BigDecimal.ONE, now.minusSeconds(8 * 86400))
-        val future = StationPrice("future", "DIESEL", BigDecimal.ONE, now.plusSeconds(1))
-
-        assertTrue(RegionalStationSampler().sample("03000000000", valid + stale + future, now).isEmpty())
-    }
-
-    @Test
-    fun testConflictingStationPriceDoesNotSelectArbitraryVersion() {
-        val first = StationPrice("station", "DIESEL", BigDecimal.TEN, now)
-        val second = first.copy(price = BigDecimal.ONE)
-
-        assertFailsWith<SourceImportException> { RegionalStationSampler().sample("03000000000", listOf(first, second), now) }
-    }
-
-    @Test
-    fun testBoundaryExcludesAdjacentRegionAndHole() {
-        val boundary = RegionBoundary("region", listOf(listOf(
-            listOf(0.0 to 0.0, 4.0 to 0.0, 4.0 to 4.0, 0.0 to 4.0, 0.0 to 0.0),
-            listOf(1.0 to 1.0, 2.0 to 1.0, 2.0 to 2.0, 1.0 to 2.0, 1.0 to 1.0)
-        )))
-
-        assertTrue(boundary.contains(3.0, 3.0))
-        assertFalse(boundary.contains(5.0, 3.0))
-        assertFalse(boundary.contains(1.5, 1.5))
     }
 
     @Test
@@ -478,64 +435,40 @@ class SourceImportTest {
     }
 
     @Test
-    fun testWhereFuelUsesBatchAndDoesNotTreatMissingPricesAsZero() {
-        val station = """[{"id":"381","lat":55.745924,"lng":37.604013}]"""
+    fun testBenzupFetchMapsOnlySupportedProductsAndKeepsExactPrices() {
+        val payload = resource("benzup/regional.json").replace("70.69", "70.690000000000000001")
 
-        stub { index -> 200 to if (index == 1) station else resource("wherefuel/no-prices.json") }.use { server ->
-            val properties = properties().also {
-                it.wherefuel.baseUrl = server.uri.toString()
-                it.wherefuel.requestInterval = Duration.ZERO
-            }
-            val client = WhereFuelClient(SourceHttpClient(properties, clock), properties, regions)
-            val boundary = RegionBoundary("45000000000", listOf(listOf(listOf(
-                37.0 to 55.0, 38.0 to 55.0, 38.0 to 56.0, 37.0 to 56.0, 37.0 to 55.0
-            ))))
+        stub { 200 to payload }.use { server ->
+            val properties = properties().also { it.benzup.endpoint = server.uri.toString() }
+            val result = BenzupClient(SourceHttpClient(properties, clock), properties).fetch()
 
-            assertTrue(client.fetch(boundary).isEmpty())
-            assertEquals(2, server.calls.get())
+            assertEquals(4, result.size)
+            assertEquals(BigDecimal("70.690000000000000001"), result.single { it.fuelCode == "AI_92" }.price)
+            assertEquals(setOf("23", "61"), result.map { it.regionId }.toSet())
+            assertEquals(1, server.calls.get())
         }
     }
 
     @Test
-    fun testWhereFuelUsesPriceVerificationTimeInsteadOfStationStatusTime() {
-        val station = """[{"id":"381","lat":55.745924,"lng":37.604013}]"""
-        val detail = """[{"id":"381","lat":55.745924,"lng":37.604013,"updatedAt":"2020-01-01T00:00:00Z",
-            "prices":[{"fuel":"ДТ","price":77.123456789012345678,"checked_at":"2026-10-25 10:00:00+00",
-            "created_at":"2020-01-01T00:00:00Z"}]}]"""
+    fun testBenzupRejectsProviderErrorsEmptyResultsAndConflictingPrices() {
+        val invalid = listOf(
+            "{\"result\":[],\"error\":0}",
+            resource("benzup/regional.json").replace("\"error\": 0", "\"error\": 1"),
+            resource("benzup/regional.json").replace("70.69", "-1"),
+            resource("benzup/regional.json").replace("70.69", "not-a-price"),
+            resource("benzup/regional.json").replace("\"result\": [", "\"result\": [{\"region_id\":23,\"region_name\":\"Краснодарский край\",\"product\":\"A0920\",\"index\":\"99\"},")
+        )
 
-        stub { index -> 200 to if (index == 1) station else detail }.use { server ->
-            val properties = properties().also {
-                it.wherefuel.baseUrl = server.uri.toString()
-                it.wherefuel.requestInterval = Duration.ZERO
+        for (payload in invalid) {
+            stub { 200 to payload }.use { server ->
+                val properties = properties().also { it.benzup.endpoint = server.uri.toString() }
+
+                assertFailsWith<SourceImportException> {
+                    BenzupClient(SourceHttpClient(properties, clock), properties).fetch()
+                }
+
+                assertEquals(1, server.calls.get())
             }
-            val client = WhereFuelClient(SourceHttpClient(properties, clock), properties, regions)
-            val boundary = RegionBoundary("45000000000", listOf(listOf(listOf(
-                37.0 to 55.0, 38.0 to 55.0, 38.0 to 56.0, 37.0 to 56.0, 37.0 to 55.0
-            ))))
-            val price = client.fetch(boundary).single()
-
-            assertEquals(BigDecimal("77.123456789012345678"), price.price)
-            assertEquals(Instant.parse("2026-10-25T10:00:00Z"), price.observedAt)
-            assertEquals("DIESEL", price.fuelCode)
-        }
-    }
-
-    @Test
-    fun testBoundaryReaderLoadsConfiguredGeoJsonPolygon() {
-        val geometry = """{"type":"FeatureCollection","features":[{"type":"Feature",
-            "properties":{"name":"Москва","code":"45000000000"},
-            "geometry":{"type":"MultiPolygon","coordinates":[[[[37,55],[38,55],[38,56],[37,56],[37,55]]]]}}]}"""
-
-        stub { 200 to geometry }.use { server ->
-            val properties = properties().also {
-                it.wherefuel.boundariesUrl = server.uri.toString()
-                it.wherefuel.regionCodes = listOf("45000000000")
-            }
-            val boundary = WhereFuelClient(SourceHttpClient(properties, clock), properties, regions).boundaries().single()
-
-            assertEquals("45000000000", boundary.regionCode)
-            assertTrue(boundary.contains(37.5, 55.5))
-            assertFalse(boundary.contains(39.0, 55.5))
         }
     }
 

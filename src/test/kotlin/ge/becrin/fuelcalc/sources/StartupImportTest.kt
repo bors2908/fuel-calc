@@ -35,9 +35,9 @@ import kotlin.test.assertEquals
         "imports.time-zone=Europe/Moscow",
         "imports.rosstat.cron=0 0 */6 * * *",
         "imports.rustata.cron=0 30 */6 * * *",
-        "imports.wherefuel.cron=0 45 * * * *",
+        "imports.benzup.cron=0 15 0,6,12,18 * * *",
         "imports.rustata.enabled=false",
-        "imports.wherefuel.enabled=false",
+        "imports.benzup.enabled=false",
         "imports.history-from=2026-09-01",
         "imports.history-windows-per-run=1"
     ]
@@ -74,8 +74,8 @@ class StartupImportTest {
             cronTasks.getValue(properties.rustata.cron).trigger.nextExecution(context)
         )
         assertEquals(
-            Instant.parse("2026-10-26T21:45:00Z"),
-            cronTasks.getValue(properties.wherefuel.cron).trigger.nextExecution(context)
+            Instant.parse("2026-10-26T21:15:00Z"),
+            cronTasks.getValue(properties.benzup.cron).trigger.nextExecution(context)
         )
     }
 

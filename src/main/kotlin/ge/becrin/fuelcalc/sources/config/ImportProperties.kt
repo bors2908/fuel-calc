@@ -44,26 +44,16 @@ class ImportProperties {
         var maxPages: Int = 10
     }
 
-    class WhereFuel {
+    class Benzup {
         var enabled: Boolean = true
 
         var fetchOnStartup: Boolean = true
 
-        var cron: String = "0 45 * * * *"
+        var cron: String = "0 15 0,6,12,18 * * *"
 
-        var baseUrl: String = "https://wherefuel.ru"
+        var endpoint: String = "https://api.omt-consult.ru/index/regional"
 
-        var apiKey: String = ""
-
-        var boundariesUrl: String = "https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/russia.geojson"
-
-        var regionCodes: List<String> = emptyList()
-
-        var requestInterval: Duration = Duration.ofSeconds(2)
-
-        var maxRequests: Int = 120
-
-        var responseLimit: Int = 1000
+        var token: String = ""
     }
 
     var enabled: Boolean = true
@@ -92,5 +82,5 @@ class ImportProperties {
 
     var rustata: Rustata = Rustata()
 
-    var wherefuel: WhereFuel = WhereFuel()
+    var benzup: Benzup = Benzup()
 }

@@ -59,14 +59,9 @@ imports:
     request-interval: PT6S
     page-size: 300
     max-pages: 10
-  wherefuel:
-    enabled: ${WHEREFUEL_ENABLED:false}
-    fetch-on-startup: ${WHEREFUEL_FETCH_ON_STARTUP:false}
-    cron: "${WHEREFUEL_CRON:0 45 * * * *}"
-    base-url: https://wherefuel.ru
-    api-key: ${WHEREFUEL_API_KEY:}
-    boundaries-url: https://raw.githubusercontent.com/codeforgermany/click_that_hood/main/public/data/russia.geojson
-    region-codes: ${WHEREFUEL_REGION_CODES:}
-    request-interval: PT2S
-    max-requests: 120
-    response-limit: 1000
+  benzup:
+    enabled: ${BENZUP_ENABLED:true}
+    fetch-on-startup: ${BENZUP_FETCH_ON_STARTUP:true}
+    cron: "${BENZUP_CRON:0 15 0,6,12,18 * * *}"
+    endpoint: ${BENZUP_ENDPOINT:https://api.omt-consult.ru/index/regional}
+    token: ${BENZUP_TOKEN:}

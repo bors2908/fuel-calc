@@ -216,10 +216,10 @@ class PriceQueryExecutor(
         val key = observation.priceKey
         val feed = observation.publication.feed
         val sample =
-            if (feed.aggregationMethod == PriceAggregationMethod.STATION_SAMPLE_MEAN) {
+            if (feed.aggregationMethod == PriceAggregationMethod.REGIONAL_INDEX_MEAN) {
                 RegionalPriceSampleDto(
                     checkNotNull(feed.samplingPolicyCode),
-                    checkNotNull(observation.sampleMinStationCount),
+                    checkNotNull(observation.sampleMeasurementCount),
                     checkNotNull(observation.sampleDayCount),
                     checkNotNull(observation.sampleExpectedDayCount),
                     checkNotNull(observation.sampleCollectedAt)
@@ -249,6 +249,7 @@ class PriceQueryExecutor(
         val end = period.endDate
         val label =
             when {
+                period.frequency == PriceFrequency.DAILY -> date.format(DATE_LABEL)
                 period.frequency == PriceFrequency.MONTHLY -> date.format(MONTH_LABEL).replaceFirstChar { it.titlecase(Locale.of("ru")) }
                 start != null && end != null -> "${start.format(DATE_LABEL)} — ${end.format(DATE_LABEL)}"
                 else -> "Неделя на ${date.format(DATE_LABEL)}"

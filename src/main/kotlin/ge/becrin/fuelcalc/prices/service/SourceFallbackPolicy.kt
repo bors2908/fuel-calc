@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component
 class SourceFallbackPolicy {
     fun order(preferred: PriceSource): List<PriceSource> =
         when (preferred) {
-            PriceSource.ROSSTAT -> listOf(PriceSource.ROSSTAT, PriceSource.RUSTATA, PriceSource.WHEREFUEL)
-            PriceSource.RUSTATA -> listOf(PriceSource.RUSTATA, PriceSource.ROSSTAT, PriceSource.WHEREFUEL)
-            PriceSource.WHEREFUEL -> listOf(PriceSource.WHEREFUEL, PriceSource.RUSTATA, PriceSource.ROSSTAT)
+            PriceSource.ROSSTAT -> listOf(PriceSource.ROSSTAT, PriceSource.RUSTATA, PriceSource.BENZUP)
+            PriceSource.RUSTATA -> listOf(PriceSource.RUSTATA, PriceSource.ROSSTAT, PriceSource.BENZUP)
+            PriceSource.BENZUP -> listOf(PriceSource.BENZUP, PriceSource.RUSTATA, PriceSource.ROSSTAT)
         }
 }

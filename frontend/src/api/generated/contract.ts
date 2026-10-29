@@ -232,11 +232,11 @@ export interface components {
             data: components["schemas"]["FuelTypeRef"][];
         };
         /**
-         * @description Канал доставки региональной цены, независимо от publisher. Три позиции слайдера: Росстат, rustata, ГдеТопливо.
+         * @description Канал доставки региональной цены, независимо от publisher. Три позиции слайдера: Росстат, rustata, BenzUp.
          * @enum {string}
          */
-        PriceSource: "ROSSTAT" | "RUSTATA" | "WHEREFUEL";
-        /** @description Полная цепочка с preferredSource первым. ROSSTAT: ROSSTAT,RUSTATA,WHEREFUEL; RUSTATA: RUSTATA,ROSSTAT,WHEREFUEL; WHEREFUEL: WHEREFUEL,RUSTATA,ROSSTAT. Backend выбирает цену той же ячейки; цепочка не задаётся клиентом. */
+        PriceSource: "ROSSTAT" | "RUSTATA" | "BENZUP";
+        /** @description Полная цепочка с preferredSource первым. ROSSTAT: ROSSTAT,RUSTATA,BENZUP; RUSTATA: RUSTATA,ROSSTAT,BENZUP; BENZUP: BENZUP,RUSTATA,ROSSTAT. Backend выбирает цену той же ячейки; цепочка не задаётся клиентом. */
         SourceFallbackOrder: components["schemas"]["PriceSource"][];
         /** @description Фактический канал цены и его название. Полные ссылки доступны в подробностях наблюдения. */
         SourceLabel: {
@@ -250,12 +250,12 @@ export interface components {
             /** Format: uri */
             url: string | null;
         };
-        /** @description Параметры средней по выборке АЗС. Цена периода — среднее последних дневных региональных средних, день имеет одинаковый вес. minStationCount — минимум числа АЗС среди вошедших дней. dayCount <= expectedDayCount; меньшее число означает неполное покрытие. Собранные сегодня цены не заполняют прошлые дни. Результат расчёта округляется до 6 знаков HALF_UP. */
+        /** @description Параметры среднего региональных индексов BenzUp. measurementCount — число успешных замеров; дневная цена — их среднее арифметическое. Недельная/месячная цена — среднее доступных дневных средних с равным весом дней. dayCount <= expectedDayCount; меньшее число означает неполное покрытие. История начинается с фактического сбора, прошлые дни не заполняются сегодняшними ценами. Округление до 6 знаков HALF_UP; collectedAt — последний замер, дата публикации поставщиком неизвестна. */
         RegionalPriceSample: {
-            /** @example TOP20_FRESH7D_MIN5_V1 */
+            /** @example BENZUP_DAILY_MEAN_V1 */
             policyCode: string;
             /** Format: int32 */
-            minStationCount: number;
+            measurementCount: number;
             /** Format: int32 */
             dayCount: number;
             /** Format: int32 */
@@ -263,19 +263,19 @@ export interface components {
             /** Format: date-time */
             collectedAt: string;
         };
-        /** @description Краткое происхождение цены. provider — фактический канал после fallback. updateKey ссылается на sourceUpdates того же ответа. Для официальной статистики sample отсутствует; для ГдеТопливо методика и выборка обязательны. Полные сведения о публикации доступны через observationId. */
+        /** @description Краткое происхождение цены. provider — фактический канал после fallback. updateKey ссылается на sourceUpdates того же ответа. Для официальной статистики sample отсутствует; для BenzUp методика и число замеров обязательны. Полные сведения о публикации доступны через observationId. */
         SourceSummary: {
             provider: components["schemas"]["SourceLabel"];
             updateKey: string;
             /** @enum {string} */
-            aggregationMethod: "OFFICIAL_STATISTICS" | "STATION_SAMPLE_MEAN";
+            aggregationMethod: "OFFICIAL_STATISTICS" | "REGIONAL_INDEX_MEAN";
             sample?: components["schemas"]["RegionalPriceSample"];
         } & ({
             /** @enum {string} */
             aggregationMethod?: "OFFICIAL_STATISTICS";
         } | {
             /** @enum {string} */
-            aggregationMethod?: "STATION_SAMPLE_MEAN";
+            aggregationMethod?: "REGIONAL_INDEX_MEAN";
         });
         /** @description Состояние обновления потока. READY не утверждает, что наблюдение относится к сегодняшнему дню. Пояснение UI выбирает по status. Несколько потоков одного канала могут иметь разные состояния. */
         SourceUpdate: {
@@ -293,9 +293,9 @@ export interface components {
             [key: string]: components["schemas"]["SourceUpdate"];
         };
         /** @enum {string} */
-        Frequency: "WEEKLY" | "MONTHLY";
+        Frequency: "DAILY" | "WEEKLY" | "MONTHLY";
         /**
-         * @description Региональная средняя цена: официальная статистика Росстата/rustata либо расчёт Backend по выборке АЗС ГдеТопливо. Методика и покрытие передаются в source.
+         * @description Региональная средняя цена: официальная статистика Росстата/rustata либо среднее замеров регионального индекса BenzUp. Методика и покрытие передаются в source.
          * @enum {string}
          */
         PriceBasis: "REGIONAL_CONSUMER_AVERAGE";
@@ -669,7 +669,7 @@ export interface components {
         FilterDateFrom: string;
         /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
         FilterDateTo: string;
-        /** @description Частота итоговых региональных наблюдений. Для ГдеТопливо Backend рассчитывает недели и месяцы независимо из дневных региональных средних. */
+        /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
         Frequency: components["schemas"]["Frequency"];
         /** @description Выбранный пользователем канал. Сначала используется его цена региона/топлива/периода, затем фиксированный fallbackOrder. Сохранённые данные не меняются, внешние API не вызываются. */
         PreferredSource: components["schemas"]["PriceSource"];
@@ -781,7 +781,7 @@ export interface operations {
                 filterDateFrom: components["parameters"]["FilterDateFrom"];
                 /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
                 filterDateTo: components["parameters"]["FilterDateTo"];
-                /** @description Частота итоговых региональных наблюдений. Для ГдеТопливо Backend рассчитывает недели и месяцы независимо из дневных региональных средних. */
+                /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
                 frequency: components["parameters"]["Frequency"];
                 /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
                 dataVersion?: components["parameters"]["DataVersion"];
@@ -823,7 +823,7 @@ export interface operations {
                 filterDateFrom: components["parameters"]["FilterDateFrom"];
                 /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
                 filterDateTo: components["parameters"]["FilterDateTo"];
-                /** @description Частота итоговых региональных наблюдений. Для ГдеТопливо Backend рассчитывает недели и месяцы независимо из дневных региональных средних. */
+                /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
                 frequency: components["parameters"]["Frequency"];
                 /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
                 dataVersion?: components["parameters"]["DataVersion"];
@@ -865,7 +865,7 @@ export interface operations {
                 filterDateFrom: components["parameters"]["FilterDateFrom"];
                 /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
                 filterDateTo: components["parameters"]["FilterDateTo"];
-                /** @description Частота итоговых региональных наблюдений. Для ГдеТопливо Backend рассчитывает недели и месяцы независимо из дневных региональных средних. */
+                /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
                 frequency: components["parameters"]["Frequency"];
                 /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
                 dataVersion?: components["parameters"]["DataVersion"];

@@ -2,6 +2,40 @@ import { expect, test } from "@playwright/test";
 import { decode } from "../src/api/client";
 import { number } from "../src/ui/format";
 
+test("real BenzUp daily prices expose collected measurements", async ({ page, request }) => {
+  test.skip(process.env.FRONTEND_LIVE_TEST !== "true", "Opt in to the real saved archive.");
+  const raw: unknown = await (await request.get("http://127.0.0.1:8080/api/v1/regions")).json();
+  const catalog = decode("RegionList", raw);
+  const region = catalog.data.find((item) => item.name === "Краснодарский край");
+  if (!region) {
+    throw new Error("Region missing from real catalog.");
+  }
+  const query = new URLSearchParams({
+    region: region.code,
+    regions: region.code,
+    fuel: "DIESEL",
+    frequency: "DAILY",
+    source: "BENZUP",
+    from: catalog.meta.serverDate,
+    to: catalog.meta.serverDate,
+  });
+  const pending = page.waitForResponse(
+    (response) => response.url().includes("/fuel-prices/overview?") && response.status() === 200,
+  );
+  await page.goto(`/?${query}`);
+  const response = await pending;
+  const overviewRaw: unknown = await response.json();
+  const overview = decode("PriceOverview", overviewRaw);
+  expect(overview.latestPrice.priceRubPerLiter).not.toBeNull();
+  if (overview.latestPrice.priceRubPerLiter === null) {
+    throw new Error("The real BenzUp fetch has not populated the daily archive.");
+  }
+  expect(overview.latestPrice.source.provider.code).toBe("BENZUP");
+  expect(overview.latestPrice.source.sample?.measurementCount).toBeGreaterThanOrEqual(1);
+  await expect(page.locator(".applied-context")).toContainText("Дни");
+  await expect(page.locator(".overview")).toContainText("замеров");
+});
+
 test("real saved archive: prices, history, source publication and server calculation", async ({
   page,
   request,

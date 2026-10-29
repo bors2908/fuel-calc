@@ -34,8 +34,8 @@ class RegionalPriceObservationEntity(
     @Column(name = "price_rub_per_liter", nullable = false, updatable = false, columnDefinition = "numeric")
     var priceRubPerLiter: BigDecimal,
 
-    @Column(name = "sample_min_station_count", updatable = false)
-    var sampleMinStationCount: Int? = null,
+    @Column(name = "sample_measurement_count", updatable = false)
+    var sampleMeasurementCount: Int? = null,
 
     @Column(name = "sample_day_count", updatable = false)
     var sampleDayCount: Int? = null,

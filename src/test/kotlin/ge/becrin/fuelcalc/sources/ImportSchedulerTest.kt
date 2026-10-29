@@ -5,7 +5,7 @@ import ge.becrin.fuelcalc.sources.service.ImportScheduler
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.RegionCatalogService
 import ge.becrin.fuelcalc.sources.service.RegionalImportService
-import ge.becrin.fuelcalc.sources.wherefuel.WhereFuelImportService
+import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
 import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 class ImportSchedulerTest {
     private val regional = mock<RegionalImportService>()
 
-    private val whereFuel = mock<WhereFuelImportService>()
+    private val benzup = mock<BenzupImportService>()
 
     private val catalogService = mock<RegionCatalogService>()
 
@@ -44,7 +44,7 @@ class ImportSchedulerTest {
         }
     }
 
-    private val scheduler = ImportScheduler(regional, whereFuel, catalogService, catalog, taskScheduler, properties, clock)
+    private val scheduler = ImportScheduler(regional, benzup, catalogService, catalog, taskScheduler, properties, clock)
 
     @Test
     fun testStartupLoadsRosstatCatalogAndPricesBeforeSchedulingOtherSources() {
@@ -69,14 +69,14 @@ class ImportSchedulerTest {
 
         assertEquals(2, tasks.size)
         verify(regional, never()).fetch("RUSTATA", true)
-        verify(whereFuel, never()).fetch()
+        verify(benzup, never()).fetch()
 
         while (tasks.isNotEmpty()) {
             tasks.removeFirst().run()
         }
 
         verify(regional).fetch("RUSTATA", true)
-        verify(whereFuel).fetch()
+        verify(benzup).fetch()
         verify(catalogService).refresh()
         verify(regional).fetch("ROSSTAT", true)
     }
@@ -86,12 +86,12 @@ class ImportSchedulerTest {
         scheduler.onReady()
         tasks.removeFirst().run()
         scheduler.rustata()
-        scheduler.whereFuel()
+        scheduler.benzup()
 
         assertTrue(tasks.isEmpty())
         verify(catalogService).refresh()
         verify(regional, never()).fetch(any(), any())
-        verify(whereFuel, never()).fetch()
+        verify(benzup, never()).fetch()
     }
 
     @Test
@@ -105,11 +105,11 @@ class ImportSchedulerTest {
             tasks.removeFirst().run()
         }
 
-        inOrder(catalogService, regional, whereFuel) {
+        inOrder(catalogService, regional, benzup) {
             verify(catalogService).refresh()
             verify(regional).fetch("ROSSTAT", true)
             verify(regional).fetch("RUSTATA", true)
-            verify(whereFuel).fetch()
+            verify(benzup).fetch()
         }
     }
 
@@ -136,19 +136,19 @@ class ImportSchedulerTest {
     }
 
     @Test
-    fun testWhereFuelStartupCanBeDisabledWithoutDisablingItsCron() {
-        properties.wherefuel.fetchOnStartup = false
+    fun testBenzupStartupCanBeDisabledWithoutDisablingItsCron() {
+        properties.benzup.fetchOnStartup = false
         seedCatalog()
 
         runStartup()
 
         verify(regional).fetch("ROSSTAT", true)
         verify(regional).fetch("RUSTATA", true)
-        verify(whereFuel, never()).fetch()
+        verify(benzup, never()).fetch()
 
-        scheduler.whereFuel()
+        scheduler.benzup()
 
-        verify(whereFuel).fetch()
+        verify(benzup).fetch()
     }
 
     @Test
@@ -160,7 +160,7 @@ class ImportSchedulerTest {
 
         verify(regional).fetch("ROSSTAT", true)
         verify(regional, never()).fetch("RUSTATA", true)
-        verify(whereFuel).fetch()
+        verify(benzup).fetch()
 
         scheduler.rustata()
 
@@ -178,7 +178,7 @@ class ImportSchedulerTest {
         verify(regional, never()).fetch("ROSSTAT", true)
         verify(regional, never()).fetch("ROSSTAT", false)
         verify(regional).fetch("RUSTATA", true)
-        verify(whereFuel).fetch()
+        verify(benzup).fetch()
 
         scheduler.rosstat()
 
@@ -190,7 +190,7 @@ class ImportSchedulerTest {
     fun testAllProviderStartupFlagsCanDisableStartupWithoutGlobalFlag() {
         properties.rosstat.fetchOnStartup = false
         properties.rustata.fetchOnStartup = false
-        properties.wherefuel.fetchOnStartup = false
+        properties.benzup.fetchOnStartup = false
 
         scheduler.onReady()
 
@@ -198,7 +198,7 @@ class ImportSchedulerTest {
         verify(catalogService).restore()
         verify(catalogService, never()).refresh()
         verify(regional, never()).fetch(any(), any())
-        verify(whereFuel, never()).fetch()
+        verify(benzup, never()).fetch()
     }
 
     @Test
@@ -209,7 +209,7 @@ class ImportSchedulerTest {
 
         verify(catalogService, never()).refresh()
         verify(regional, never()).fetch(any(), any())
-        verify(whereFuel, never()).fetch()
+        verify(benzup, never()).fetch()
 
         doAnswer {
             seedCatalog()
@@ -219,24 +219,24 @@ class ImportSchedulerTest {
 
         scheduler.rosstat()
         scheduler.rustata()
-        scheduler.whereFuel()
+        scheduler.benzup()
 
-        inOrder(regional, whereFuel) {
+        inOrder(regional, benzup) {
             verify(regional).fetch("ROSSTAT", false)
             verify(regional).fetch("RUSTATA", false)
-            verify(whereFuel).fetch()
+            verify(benzup).fetch()
         }
     }
 
     @Test
     fun testDisabledProviderIsNotStartedByItsCronOrStartupFlag() {
-        properties.wherefuel.enabled = false
+        properties.benzup.enabled = false
         seedCatalog()
 
         runStartup()
-        scheduler.whereFuel()
+        scheduler.benzup()
 
-        verify(whereFuel, never()).fetch()
+        verify(benzup, never()).fetch()
     }
 
     private fun runStartup() {

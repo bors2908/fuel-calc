@@ -98,8 +98,8 @@ test("source and frequency apply immediately and browser history restores every 
   await page.goto(selectionUrl);
   await expect(page.locator(".comparison-row")).toHaveCount(3);
   await page.locator(".data-parameters summary").click();
-  await page.getByRole("radio", { name: "ГдеТопливо", exact: true }).check();
-  await expect(page.locator(".applied-context")).toContainText("ГдеТопливо");
+  await page.getByRole("radio", { name: "BenzUp", exact: true }).check();
+  await expect(page.locator(".applied-context")).toContainText("BenzUp");
   await page.getByRole("radio", { name: "Месяцы", exact: true }).check();
   await expect(page.locator(".applied-context")).toContainText("Месяцы");
   await page.goBack();
@@ -109,7 +109,7 @@ test("source and frequency apply immediately and browser history restores every 
   await expect(page.locator(".applied-context")).toContainText("Росстат");
   await expect(page.getByRole("radio", { name: "Росстат", exact: true })).toBeChecked();
   await page.goForward();
-  await expect(page.locator(".applied-context")).toContainText("ГдеТопливо");
+  await expect(page.locator(".applied-context")).toContainText("BenzUp");
 });
 
 test("incomplete and invalid dates keep the displayed context and never request prices", async ({
@@ -151,8 +151,8 @@ test("period presets, additional regions and reset apply without confirmation", 
   await page.getByRole("checkbox", { name: /очень длинным/ }).check();
   await expect(page.locator(".comparison-row")).toHaveCount(4);
   await page.locator(".data-parameters summary").click();
-  await page.getByRole("radio", { name: "ГдеТопливо", exact: true }).check();
-  await expect(page.locator(".applied-context")).toContainText("ГдеТопливо");
+  await page.getByRole("radio", { name: "BenzUp", exact: true }).check();
+  await expect(page.locator(".applied-context")).toContainText("BenzUp");
   await page.getByRole("radio", { name: "Месяцы", exact: true }).check();
   await expect(page.locator(".applied-context")).toContainText("Месяцы");
   await page.getByRole("button", { name: "Сбросить фильтры" }).click();
@@ -163,7 +163,7 @@ test("period presets, additional regions and reset apply without confirmation", 
       .filter((item) => item.path === "overview")
       .at(-1)
       ?.query.get("preferredSource"),
-  ).toBe("WHEREFUEL");
+  ).toBe("BENZUP");
   await expect(page.getByRole("radio", { name: "Недели", exact: true })).toBeChecked();
 });
 
@@ -397,17 +397,17 @@ test("coverage is fetched on demand and fetched again after reopening", async ({
     .toBeGreaterThan(first);
 });
 
-test("sample-based price explains fallback and partial station coverage", async ({ page }) => {
+test("BenzUp price explains fallback and partial measurement coverage", async ({ page }) => {
   await mockApi(page);
   const overview = responses().overview;
   const sampled = price(selection.baseRegionCode);
   sampled.source = {
-    provider: { code: "WHEREFUEL", name: "ГдеТопливо" },
+    provider: { code: "BENZUP", name: "BenzUp" },
     updateKey: "sample",
-    aggregationMethod: "STATION_SAMPLE_MEAN",
+    aggregationMethod: "REGIONAL_INDEX_MEAN",
     sample: {
-      policyCode: "TOP20_FRESH7D_MIN5_V1",
-      minStationCount: 5,
+      policyCode: "BENZUP_DAILY_MEAN_V1",
+      measurementCount: 5,
       dayCount: 4,
       expectedDayCount: 7,
       collectedAt: "2026-10-29T10:00:00Z",
@@ -416,7 +416,7 @@ test("sample-based price explains fallback and partial station coverage", async 
   overview.latestPrice = sampled;
   await page.route("**/fuel-prices/overview?**", (route) => route.fulfill({ json: overview }));
   await page.goto(selectionUrl);
-  await expect(page.locator(".overview")).toContainText("Резерв: ГдеТопливо");
+  await expect(page.locator(".overview")).toContainText("Резерв: BenzUp");
   await expect(page.locator(".overview")).toContainText("4/7 дней · неполный период");
 });
 

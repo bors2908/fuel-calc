@@ -84,7 +84,7 @@ export function responses(
     preferredSource: selected.preferredSource,
     fallbackOrder: [
       selected.preferredSource,
-      ...(["ROSSTAT", "RUSTATA", "WHEREFUEL"] as const).filter(
+      ...(["ROSSTAT", "RUSTATA", "BENZUP"] as const).filter(
         (source) => source !== selected.preferredSource,
       ),
     ],
@@ -217,7 +217,7 @@ export function responses(
     fallbackOrder: context.fallbackOrder,
     sourceUpdates: {},
     data: selectedRegions.flatMap((region) =>
-      (["WEEKLY", "MONTHLY"] as const).map((frequency) => ({
+      (["DAILY", "WEEKLY", "MONTHLY"] as const).map((frequency) => ({
         region,
         fuelType: context.fuelType,
         frequency,
@@ -307,11 +307,11 @@ export async function mockApi(
       dateTo: query.get("filterDateTo") ?? selection.dateTo,
     };
     const source = query.get("preferredSource");
-    if (source === "ROSSTAT" || source === "RUSTATA" || source === "WHEREFUEL") {
+    if (source === "ROSSTAT" || source === "RUSTATA" || source === "BENZUP") {
       selected.preferredSource = source;
     }
     const frequency = query.get("frequency");
-    if (frequency === "MONTHLY") {
+    if (frequency === "DAILY" || frequency === "MONTHLY") {
       selected.frequency = frequency;
     }
     const fuel = query.get("filterFuelType");

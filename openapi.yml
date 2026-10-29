@@ -405,7 +405,8 @@ components:
     Frequency:
       name: frequency
       in: query
-      description: Частота итоговых региональных наблюдений. Для ГдеТопливо Backend рассчитывает недели и месяцы независимо из дневных региональных средних.
+      description: |-
+        Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней.
       required: true
       schema:
         $ref: '#/components/schemas/Frequency'
@@ -662,16 +663,16 @@ components:
     ###########################################################################
     PriceSource:
       description: |-
-        Канал доставки региональной цены, независимо от publisher. Три позиции слайдера: Росстат, rustata, ГдеТопливо.
+        Канал доставки региональной цены, независимо от publisher. Три позиции слайдера: Росстат, rustata, BenzUp.
       type: string
       enum:
         - ROSSTAT
         - RUSTATA
-        - WHEREFUEL
+        - BENZUP
 
     SourceFallbackOrder:
       description: |-
-        Полная цепочка с preferredSource первым. ROSSTAT: ROSSTAT,RUSTATA,WHEREFUEL; RUSTATA: RUSTATA,ROSSTAT,WHEREFUEL; WHEREFUEL: WHEREFUEL,RUSTATA,ROSSTAT. Backend выбирает цену той же ячейки; цепочка не задаётся клиентом.
+        Полная цепочка с preferredSource первым. ROSSTAT: ROSSTAT,RUSTATA,BENZUP; RUSTATA: RUSTATA,ROSSTAT,BENZUP; BENZUP: BENZUP,RUSTATA,ROSSTAT. Backend выбирает цену той же ячейки; цепочка не задаётся клиентом.
       type: array
       items:
         $ref: '#/components/schemas/PriceSource'
@@ -713,10 +714,10 @@ components:
           nullable: true
 
     RegionalPriceSample:
-      description: Параметры средней по выборке АЗС. Цена периода — среднее последних дневных региональных средних, день имеет одинаковый вес. minStationCount — минимум числа АЗС среди вошедших дней. dayCount <= expectedDayCount; меньшее число означает неполное покрытие. Собранные сегодня цены не заполняют прошлые дни. Результат расчёта округляется до 6 знаков HALF_UP.
+      description: Параметры среднего региональных индексов BenzUp. measurementCount — число успешных замеров; дневная цена — их среднее арифметическое. Недельная/месячная цена — среднее доступных дневных средних с равным весом дней. dayCount <= expectedDayCount; меньшее число означает неполное покрытие. История начинается с фактического сбора, прошлые дни не заполняются сегодняшними ценами. Округление до 6 знаков HALF_UP; collectedAt — последний замер, дата публикации поставщиком неизвестна.
       required:
         - policyCode
-        - minStationCount
+        - measurementCount
         - dayCount
         - expectedDayCount
         - collectedAt
@@ -725,12 +726,11 @@ components:
         policyCode:
           type: string
           minLength: 1
-          example: TOP20_FRESH7D_MIN5_V1
-        minStationCount:
+          example: BENZUP_DAILY_MEAN_V1
+        measurementCount:
           type: integer
           format: int32
-          minimum: 5
-          maximum: 20
+          minimum: 1
         dayCount:
           type: integer
           format: int32
@@ -746,7 +746,7 @@ components:
           format: date-time
 
     SourceSummary:
-      description: Краткое происхождение цены. provider — фактический канал после fallback. updateKey ссылается на sourceUpdates того же ответа. Для официальной статистики sample отсутствует; для ГдеТопливо методика и выборка обязательны. Полные сведения о публикации доступны через observationId.
+      description: Краткое происхождение цены. provider — фактический канал после fallback. updateKey ссылается на sourceUpdates того же ответа. Для официальной статистики sample отсутствует; для BenzUp методика и число замеров обязательны. Полные сведения о публикации доступны через observationId.
       required:
         - provider
         - updateKey
@@ -767,7 +767,7 @@ components:
             aggregationMethod:
               type: string
               enum:
-                - STATION_SAMPLE_MEAN
+                - REGIONAL_INDEX_MEAN
       properties:
         provider:
           $ref: '#/components/schemas/SourceLabel'
@@ -778,7 +778,7 @@ components:
           type: string
           enum:
             - OFFICIAL_STATISTICS
-            - STATION_SAMPLE_MEAN
+            - REGIONAL_INDEX_MEAN
         sample:
           $ref: '#/components/schemas/RegionalPriceSample'
       additionalProperties: false
@@ -827,12 +827,13 @@ components:
     Frequency:
       type: string
       enum:
+        - DAILY
         - WEEKLY
         - MONTHLY
 
     PriceBasis:
       description: |-
-        Региональная средняя цена: официальная статистика Росстата/rustata либо расчёт Backend по выборке АЗС ГдеТопливо. Методика и покрытие передаются в source.
+        Региональная средняя цена: официальная статистика Росстата/rustata либо среднее замеров регионального индекса BenzUp. Методика и покрытие передаются в source.
       type: string
       enum:
         - REGIONAL_CONSUMER_AVERAGE
@@ -1090,7 +1091,7 @@ components:
           items:
             $ref: '#/components/schemas/Coverage'
           minItems: 2
-          maxItems: 24
+          maxItems: 36
         sourceUpdates:
           $ref: '#/components/schemas/SourceUpdates'
 

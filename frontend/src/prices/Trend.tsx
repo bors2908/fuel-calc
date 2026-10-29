@@ -58,7 +58,12 @@ export function Trend({ value, onObservation }: Props) {
           <h2>Как менялась цена</h2>
           <p className="muted">
             {value.context.fuelType.name} · ₽/л ·{" "}
-            {value.context.frequency === "WEEKLY" ? "Недельные" : "Месячные"} наблюдения
+            {
+              { DAILY: "Дневные", WEEKLY: "Недельные", MONTHLY: "Месячные" }[
+                value.context.frequency
+              ]
+            }{" "}
+            наблюдения
           </p>
         </div>
         <div

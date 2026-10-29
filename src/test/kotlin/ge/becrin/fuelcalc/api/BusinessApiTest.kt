@@ -296,18 +296,18 @@ class BusinessApiTest {
     @Test
     fun testFallbackUsesTheWholeDeclaredChainAndMarksAllMinimumTies() {
         fixture.price("A", "70", provider = "RUSTATA")
-        fixture.price("A", "60", provider = "WHEREFUEL")
+        fixture.price("A", "60", provider = "BENZUP")
         fixture.price("B", "80")
-        fixture.price("B", "60", provider = "WHEREFUEL")
+        fixture.price("B", "60", provider = "BENZUP")
         fixture.price("C", "80")
         fixture.price("C", "70", provider = "RUSTATA")
-        fixture.price("D", "60", provider = "WHEREFUEL")
+        fixture.price("D", "60", provider = "BENZUP")
 
         for ((region, preferred, expected) in listOf(
             Triple("A", "ROSSTAT", "RUSTATA"),
             Triple("B", "RUSTATA", "ROSSTAT"),
-            Triple("C", "WHEREFUEL", "RUSTATA"),
-            Triple("D", "ROSSTAT", "WHEREFUEL")
+            Triple("C", "BENZUP", "RUSTATA"),
+            Triple("D", "ROSSTAT", "BENZUP")
         )) {
             val row = prices("comparison", regions = region, base = region, preferred = preferred)
                 .path("comparison").path("data").path(0)
@@ -337,25 +337,25 @@ class BusinessApiTest {
 
         val coverage = fetch("/api/v1/fuel-prices/coverage", mapOf("filterRegionCode" to "A,B,C,D", "preferredSource" to "ROSSTAT"))
 
-        assertEquals(24, coverage.path("data").size())
+        assertEquals(36, coverage.path("data").size())
         assertTrue(coverage.path("data").all { it.path("observationCount").asInt() == 0 && it.path("firstAvailableDate").isNull })
         assertTrue(coverage.path("data").all { !it.has("latestSource") })
     }
 
     @Test
     fun testEveryPreferredSourceWinsWithoutAveraging() {
-        for ((source, price) in listOf("ROSSTAT" to "80.50", "RUSTATA" to "70.25", "WHEREFUEL" to "60.125000")) {
+        for ((source, price) in listOf("ROSSTAT" to "80.50", "RUSTATA" to "70.25", "BENZUP" to "60.125000")) {
             fixture.price("A", price, provider = source)
         }
 
-        for ((source, price) in listOf("ROSSTAT" to "80.50", "RUSTATA" to "70.25", "WHEREFUEL" to "60.125000")) {
+        for ((source, price) in listOf("ROSSTAT" to "80.50", "RUSTATA" to "70.25", "BENZUP" to "60.125000")) {
             val result = prices("comparison", regions = "A", preferred = source).path("comparison")
             val cell = result.path("data").path(0).path("price")
 
             assertEquals("SINGLE_REGION", result.path("status").asString())
             assertEquals(price, cell.path("priceRubPerLiter").asString())
             assertEquals(source, cell.path("source").path("provider").path("code").asString())
-            assertEquals(source == "WHEREFUEL", cell.path("source").has("sample"))
+            assertEquals(source == "BENZUP", cell.path("source").has("sample"))
             assertTrue(cell.path("missingReason").isNull)
         }
     }
@@ -508,7 +508,7 @@ class BusinessApiTest {
             )
         )
 
-        assertEquals(listOf(2, 1), coverage.path("data").toList().map { it.path("observationCount").asInt() })
+        assertEquals(listOf(0, 2, 1), coverage.path("data").toList().map { it.path("observationCount").asInt() })
 
         val month = prices("overview", regions = "A", extra = mapOf("frequency" to "MONTHLY")).path("latestPrice")
 
@@ -664,6 +664,20 @@ class BusinessApiTest {
         }
         calculate(regions = listOf("A", "B"), status = 422)
         calculate(regions = listOf("B"), base = "B", status = 422)
+    }
+
+    @Test
+    fun testDailyBenzupPriceIncludesMeasurementProvenance() {
+        fixture.price("A", "75.123456", date = "2026-10-26", provider = "BENZUP", frequency = PriceFrequency.DAILY)
+
+        val result = prices("overview", regions = "A", extra = mapOf("frequency" to "DAILY", "preferredSource" to "BENZUP"))
+        val price = result.path("latestPrice")
+
+        assertEquals("75.123456", price.path("priceRubPerLiter").asString())
+        assertEquals("DAILY", price.path("period").path("frequency").asString())
+        assertEquals("BENZUP", price.path("source").path("provider").path("code").asString())
+        assertEquals("REGIONAL_INDEX_MEAN", price.path("source").path("aggregationMethod").asString())
+        assertEquals(5, price.path("source").path("sample").path("measurementCount").asInt())
     }
 
     private fun prices(

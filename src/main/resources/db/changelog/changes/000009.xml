@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.3.xsd">
+
+    <changeSet id="1" author="fuel-calc">
+        <sql><![CDATA[
+            -- Remove the retired provider without relabelling its observations as BenzUp data.
+            UPDATE regional_price_keys SET current_observation_id = NULL WHERE provider_code = 'WHEREFUEL';
+            DELETE FROM regional_price_observations
+            WHERE price_key_id IN (SELECT id FROM regional_price_keys WHERE provider_code = 'WHEREFUEL');
+            DELETE FROM regional_price_keys WHERE provider_code = 'WHEREFUEL';
+            DELETE FROM source_publications
+            WHERE feed_id IN (SELECT id FROM source_feeds WHERE provider_code = 'WHEREFUEL');
+        ]]></sql>
+        <dropTable tableName="regional_price_samples"/>
+        <sql><![CDATA[
+            DELETE FROM import_runs WHERE feed_id IN (SELECT id FROM source_feeds WHERE provider_code = 'WHEREFUEL');
+            DELETE FROM source_fetch_states WHERE feed_id IN (SELECT id FROM source_feeds WHERE provider_code = 'WHEREFUEL');
+            DELETE FROM source_feeds WHERE provider_code = 'WHEREFUEL';
+            DELETE FROM data_sources WHERE code = 'WHEREFUEL';
+
+            ALTER TABLE source_feeds DROP CONSTRAINT source_feeds_ck1, DROP CONSTRAINT source_feeds_ck2;
+            ALTER TABLE source_feeds ADD CONSTRAINT source_feeds_ck1 CHECK (
+                frequency IN ('DAILY', 'WEEKLY', 'MONTHLY')
+                AND aggregation_method IN ('OFFICIAL_STATISTICS', 'REGIONAL_INDEX_MEAN')
+                AND update_status IN ('READY', 'DELAYED', 'UNAVAILABLE', 'UNKNOWN')
+            );
+            ALTER TABLE source_feeds ADD CONSTRAINT source_feeds_ck2 CHECK (
+                (aggregation_method = 'OFFICIAL_STATISTICS' AND sampling_policy_code IS NULL)
+                OR (aggregation_method = 'REGIONAL_INDEX_MEAN' AND sampling_policy_code IS NOT NULL AND length(trim(sampling_policy_code)) > 0)
+            );
+            ALTER TABLE regional_price_keys DROP CONSTRAINT regional_price_keys_ck1;
+            ALTER TABLE regional_price_keys ADD CONSTRAINT regional_price_keys_ck1
+                CHECK (provider_code IN ('ROSSTAT', 'RUSTATA', 'BENZUP'));
+            ALTER TABLE price_periods DROP CONSTRAINT price_periods_ck1, DROP CONSTRAINT price_periods_ck2;
+            ALTER TABLE price_periods ADD CONSTRAINT price_periods_ck1 CHECK (
+                basis = 'REGIONAL_CONSUMER_AVERAGE' AND frequency IN ('DAILY', 'WEEKLY', 'MONTHLY')
+            );
+            ALTER TABLE price_periods ADD CONSTRAINT price_periods_ck2 CHECK (
+                (frequency = 'DAILY' AND start_date = reference_date AND end_date = reference_date
+                    AND start_date IS NOT NULL AND end_date IS NOT NULL)
+                OR (frequency = 'WEEKLY' AND (
+                    (start_date IS NULL AND end_date IS NULL)
+                    OR (start_date IS NOT NULL AND end_date IS NOT NULL AND start_date <= reference_date AND reference_date <= end_date)))
+                OR (frequency = 'MONTHLY' AND start_date IS NOT NULL AND end_date IS NOT NULL
+                    AND start_date = date_trunc('month', start_date::timestamp)::date
+                    AND end_date = (start_date + INTERVAL '1 month - 1 day')::date AND reference_date = end_date)
+            );
+            ALTER TABLE regional_price_observations DROP CONSTRAINT regional_price_observations_ck2;
+        ]]></sql>
+        <renameColumn tableName="regional_price_observations" oldColumnName="sample_min_station_count"
+                      newColumnName="sample_measurement_count" columnDataType="integer"/>
+        <sql><![CDATA[
+            ALTER TABLE regional_price_observations ADD CONSTRAINT regional_price_observations_ck2 CHECK (
+                (sample_measurement_count IS NULL AND sample_day_count IS NULL
+                    AND sample_expected_day_count IS NULL AND sample_collected_at IS NULL)
+                OR (sample_measurement_count IS NOT NULL AND sample_day_count IS NOT NULL
+                    AND sample_expected_day_count IS NOT NULL AND sample_collected_at IS NOT NULL
+                    AND sample_measurement_count >= sample_day_count
+                    AND sample_day_count BETWEEN 1 AND sample_expected_day_count
+                    AND sample_expected_day_count BETWEEN 1 AND 31)
+            );
+        ]]></sql>
+        <insert tableName="data_sources">
+            <column name="code" value="BENZUP"/>
+            <column name="name" value="BenzUp"/>
+            <column name="url" value="https://benzup.ru/index-region"/>
+        </insert>
+        <sql><![CDATA[
+            UPDATE archive_state SET revision = revision + 1, updated_at = CURRENT_TIMESTAMP WHERE id = 1;
+        ]]></sql>
+    </changeSet>
+
+    <changeSet id="2" author="fuel-calc">
+        <sql><![CDATA[
+            CREATE TABLE benzup_measurements (
+                id bigint GENERATED BY DEFAULT AS IDENTITY CONSTRAINT benzup_measurements_pk PRIMARY KEY,
+                region_id bigint NOT NULL,
+                fuel_type_code varchar(16) NOT NULL,
+                import_run_id bigint NOT NULL,
+                observed_date date NOT NULL,
+                price_rub_per_liter numeric NOT NULL,
+                collected_at timestamp with time zone NOT NULL,
+                CONSTRAINT benzup_measurements_uk1 UNIQUE (import_run_id, region_id, fuel_type_code),
+                CONSTRAINT benzup_measurements_fk1 FOREIGN KEY (import_run_id) REFERENCES import_runs(id),
+                CONSTRAINT benzup_measurements_fk2 FOREIGN KEY (region_id) REFERENCES regions(id),
+                CONSTRAINT benzup_measurements_fk3 FOREIGN KEY (fuel_type_code) REFERENCES fuel_types(code),
+                CONSTRAINT benzup_measurements_ck1 CHECK (
+                    price_rub_per_liter > 0 AND price_rub_per_liter NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+                    AND length(price_rub_per_liter::text) <= 64
+                    AND observed_date = (collected_at AT TIME ZONE 'Europe/Moscow')::date
+                )
+            );
+            CREATE INDEX benzup_measurements_fk2_idx ON benzup_measurements(region_id, observed_date);
+            CREATE INDEX benzup_measurements_fk3_idx ON benzup_measurements(fuel_type_code);
+
+            CREATE TABLE benzup_daily_prices (
+                id bigint GENERATED BY DEFAULT AS IDENTITY CONSTRAINT benzup_daily_prices_pk PRIMARY KEY,
+                region_id bigint NOT NULL,
+                fuel_type_code varchar(16) NOT NULL,
+                observed_date date NOT NULL,
+                price_sum numeric NOT NULL,
+                measurement_count integer NOT NULL,
+                price_rub_per_liter numeric NOT NULL,
+                collected_at timestamp with time zone NOT NULL,
+                CONSTRAINT benzup_daily_prices_uk1 UNIQUE (region_id, fuel_type_code, observed_date),
+                CONSTRAINT benzup_daily_prices_fk1 FOREIGN KEY (region_id) REFERENCES regions(id),
+                CONSTRAINT benzup_daily_prices_fk2 FOREIGN KEY (fuel_type_code) REFERENCES fuel_types(code),
+                CONSTRAINT benzup_daily_prices_ck1 CHECK (
+                    measurement_count > 0 AND price_sum > 0
+                    AND price_sum NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
+                    AND price_rub_per_liter = round(price_sum / measurement_count, 6)
+                    AND observed_date = (collected_at AT TIME ZONE 'Europe/Moscow')::date
+                )
+            );
+            CREATE INDEX benzup_daily_prices_fk2_idx ON benzup_daily_prices(fuel_type_code);
+            CREATE INDEX benzup_daily_prices_idx1 ON benzup_daily_prices(observed_date);
+        ]]></sql>
+    </changeSet>
+
+</databaseChangeLog>

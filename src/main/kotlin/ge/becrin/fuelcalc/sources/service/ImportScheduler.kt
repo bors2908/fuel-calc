@@ -1,7 +1,7 @@
 package ge.becrin.fuelcalc.sources.service
 
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.wherefuel.WhereFuelImportService
+import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
@@ -17,7 +17,7 @@ import kotlin.concurrent.withLock
 class ImportScheduler(
     private val regional: RegionalImportService,
 
-    private val whereFuel: WhereFuelImportService,
+    private val benzup: BenzupImportService,
 
     private val catalogService: RegionCatalogService,
 
@@ -40,14 +40,14 @@ class ImportScheduler(
         }
 
         regional.initialize()
-        whereFuel.initialize()
+        benzup.initialize()
         catalogService.restore()
 
         val rosstatAtStartup = properties.rosstat.enabled && properties.rosstat.fetchOnStartup
         val rustataAtStartup = properties.rustata.enabled && properties.rustata.fetchOnStartup
-        val whereFuelAtStartup = properties.wherefuel.enabled && properties.wherefuel.fetchOnStartup
+        val benzupAtStartup = properties.benzup.enabled && properties.benzup.fetchOnStartup
 
-        if (!properties.fetchOnStartup || !rosstatAtStartup && !rustataAtStartup && !whereFuelAtStartup) {
+        if (!properties.fetchOnStartup || !rosstatAtStartup && !rustataAtStartup && !benzupAtStartup) {
             return
         }
 
@@ -57,13 +57,13 @@ class ImportScheduler(
                     fetchRosstat(true)
                 }
 
-                if ((rustataAtStartup || whereFuelAtStartup) && catalogAvailable("DEPENDENT_SOURCES")) {
+                if ((rustataAtStartup || benzupAtStartup) && catalogAvailable("DEPENDENT_SOURCES")) {
                     if (rustataAtStartup) {
                         scheduler.schedule({ safely { fetchRustata(true) } }, clock.instant())
                     }
 
-                    if (whereFuelAtStartup) {
-                        scheduler.schedule({ whereFuel() }, clock.instant())
+                    if (benzupAtStartup) {
+                        scheduler.schedule({ benzup() }, clock.instant())
                     }
                 }
             }
@@ -87,13 +87,13 @@ class ImportScheduler(
     }
 
     @Scheduled(
-        cron = "\${imports.wherefuel.cron:0 45 * * * *}",
+        cron = "\${imports.benzup.cron:0 15 0,6,12,18 * * *}",
         zone = "\${imports.time-zone:Europe/Moscow}"
     )
-    fun whereFuel() {
+    fun benzup() {
         safely {
-            if (properties.wherefuel.enabled && catalogAvailable("WHEREFUEL")) {
-                whereFuel.fetch()
+            if (properties.benzup.enabled && catalogAvailable("BENZUP")) {
+                benzup.fetch()
             }
         }
     }

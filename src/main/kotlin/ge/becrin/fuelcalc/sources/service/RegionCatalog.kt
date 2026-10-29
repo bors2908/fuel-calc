@@ -29,7 +29,7 @@ class RegionCatalog {
 
     fun replace(regions: List<Region>) {
         require(regions.isNotEmpty()) { "Region catalog must not be empty" }
-        require(regions.all { it.code.matches(Regex("\\d{11}")) && it.name.isNotBlank() }) { "Invalid region entry" }
+        require(regions.all { it.code.matches(Regex("[A-Z0-9][A-Z0-9_-]{0,31}")) && it.name.isNotBlank() }) { "Invalid region entry" }
 
         val sorted = regions.sortedBy { it.code }
         val byCode = sorted.associateBy { it.code }
@@ -45,7 +45,7 @@ class RegionCatalog {
         snapshot.byName[normalize(name)]
 
     fun byCode(code: String): Region? =
-        snapshot.byCode[code.padStart(11, '0')]
+        snapshot.byCode[if (code.all(Char::isDigit)) code.padStart(11, '0') else code]
 
     private fun normalize(name: String): String {
         var value = name.lowercase().replace('ё', 'е').replace('–', '-').replace('—', '-')

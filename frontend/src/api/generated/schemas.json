@@ -165,7 +165,7 @@
       "enum": [
         "ROSSTAT",
         "RUSTATA",
-        "WHEREFUEL"
+        "BENZUP"
       ]
     },
     "SourceFallbackOrder": {
@@ -220,7 +220,7 @@
     "RegionalPriceSample": {
       "required": [
         "policyCode",
-        "minStationCount",
+        "measurementCount",
         "dayCount",
         "expectedDayCount",
         "collectedAt"
@@ -231,11 +231,10 @@
           "type": "string",
           "minLength": 1
         },
-        "minStationCount": {
+        "measurementCount": {
           "type": "integer",
           "format": "int32",
-          "minimum": 5,
-          "maximum": 20
+          "minimum": 1
         },
         "dayCount": {
           "type": "integer",
@@ -286,7 +285,7 @@
             "aggregationMethod": {
               "type": "string",
               "enum": [
-                "STATION_SAMPLE_MEAN"
+                "REGIONAL_INDEX_MEAN"
               ]
             }
           }
@@ -304,7 +303,7 @@
           "type": "string",
           "enum": [
             "OFFICIAL_STATISTICS",
-            "STATION_SAMPLE_MEAN"
+            "REGIONAL_INDEX_MEAN"
           ]
         },
         "sample": {
@@ -360,6 +359,7 @@
     "Frequency": {
       "type": "string",
       "enum": [
+        "DAILY",
         "WEEKLY",
         "MONTHLY"
       ]
@@ -685,7 +685,7 @@
             "$ref": "#/definitions/Coverage"
           },
           "minItems": 2,
-          "maxItems": 24
+          "maxItems": 36
         },
         "sourceUpdates": {
           "$ref": "#/definitions/SourceUpdates"

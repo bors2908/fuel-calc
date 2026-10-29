@@ -42,9 +42,9 @@ class PriceDomainTest {
 
     @Test
     fun testFallbackOrdersCoverThreeIndependentChannels() {
-        assertEquals(listOf(PriceSource.ROSSTAT, PriceSource.RUSTATA, PriceSource.WHEREFUEL), policy.order(PriceSource.ROSSTAT))
-        assertEquals(listOf(PriceSource.RUSTATA, PriceSource.ROSSTAT, PriceSource.WHEREFUEL), policy.order(PriceSource.RUSTATA))
-        assertEquals(listOf(PriceSource.WHEREFUEL, PriceSource.RUSTATA, PriceSource.ROSSTAT), policy.order(PriceSource.WHEREFUEL))
+        assertEquals(listOf(PriceSource.ROSSTAT, PriceSource.RUSTATA, PriceSource.BENZUP), policy.order(PriceSource.ROSSTAT))
+        assertEquals(listOf(PriceSource.RUSTATA, PriceSource.ROSSTAT, PriceSource.BENZUP), policy.order(PriceSource.RUSTATA))
+        assertEquals(listOf(PriceSource.BENZUP, PriceSource.RUSTATA, PriceSource.ROSSTAT), policy.order(PriceSource.BENZUP))
     }
 
     @Test

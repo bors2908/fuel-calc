@@ -141,7 +141,7 @@ export function Filters({ catalog, value, error, onChange }: Props) {
         <fieldset>
           <legend>Предпочтительный источник</legend>
           <div className="source-options">
-            {(["ROSSTAT", "RUSTATA", "WHEREFUEL"] as const).map((source) => (
+            {(["ROSSTAT", "RUSTATA", "BENZUP"] as const).map((source) => (
               <label key={source}>
                 <input
                   type="radio"
@@ -158,7 +158,7 @@ export function Filters({ catalog, value, error, onChange }: Props) {
         <fieldset>
           <legend>Периодичность наблюдений</legend>
           <div className="source-options">
-            {(["WEEKLY", "MONTHLY"] as const).map((frequency) => (
+            {(["DAILY", "WEEKLY", "MONTHLY"] as const).map((frequency) => (
               <label key={frequency}>
                 <input
                   type="radio"

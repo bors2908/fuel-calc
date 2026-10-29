@@ -13,7 +13,7 @@ data class RegionalPriceFact(
 
     val publicationDate: LocalDate? = null,
 
-    val sampleMinStationCount: Int? = null,
+    val sampleMeasurementCount: Int? = null,
 
     val sampleDayCount: Int? = null,
 

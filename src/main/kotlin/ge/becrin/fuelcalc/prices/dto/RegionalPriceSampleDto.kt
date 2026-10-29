@@ -5,7 +5,7 @@ import java.time.Instant
 data class RegionalPriceSampleDto(
     val policyCode: String,
 
-    val minStationCount: Int,
+    val measurementCount: Int,
 
     val dayCount: Int,
 

@@ -143,7 +143,7 @@ class RegionalPricePublicationService(
                     priceKey = priceKey,
                     publication = edition,
                     priceRubPerLiter = fact.price,
-                    sampleMinStationCount = fact.sampleMinStationCount,
+                    sampleMeasurementCount = fact.sampleMeasurementCount,
                     sampleDayCount = fact.sampleDayCount,
                     sampleExpectedDayCount = fact.sampleExpectedDayCount,
                     sampleCollectedAt = fact.sampleCollectedAt
@@ -164,7 +164,8 @@ class RegionalPricePublicationService(
                     val candidateAt = version.sampleCollectedAt
                     val currentAt = current?.sampleCollectedAt
 
-                    candidateAt != null && (currentAt == null || candidateAt > currentAt)
+                    candidateAt != null && (currentAt == null || candidateAt > currentAt ||
+                        candidateAt == currentAt && version.publication.firstImportRun.id > current.publication.firstImportRun.id)
                 } else {
                     candidateDate != null && currentDate != null && candidateDate > currentDate
                 }
@@ -190,7 +191,7 @@ class RegionalPricePublicationService(
 
     private fun factFields(fact: RegionalPriceFact): List<Any?> =
         listOf(
-            fact.regionCode, fact.fuelCode, fact.price, fact.publicationDate, fact.sampleMinStationCount,
+            fact.regionCode, fact.fuelCode, fact.price, fact.publicationDate, fact.sampleMeasurementCount,
             fact.sampleDayCount, fact.sampleExpectedDayCount, fact.sampleCollectedAt, fact.sampleInputHash
         )
 }

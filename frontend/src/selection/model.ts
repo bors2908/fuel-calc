@@ -101,10 +101,10 @@ export function readSelection(catalog: Catalog): {
   if (fuel === "DIESEL" || fuel === "AI_92" || fuel === "AI_95") {
     value.fuelType = fuel;
   }
-  if (frequency === "WEEKLY" || frequency === "MONTHLY") {
+  if (frequency === "DAILY" || frequency === "WEEKLY" || frequency === "MONTHLY") {
     value.frequency = frequency;
   }
-  if (source === "ROSSTAT" || source === "RUSTATA" || source === "WHEREFUEL") {
+  if (source === "ROSSTAT" || source === "RUSTATA" || source === "BENZUP") {
     value.preferredSource = source;
   }
   const invalidEnum =
