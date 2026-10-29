@@ -86,3 +86,7 @@ yarn-error.log*
 .AppleDouble
 .LSOverride
 ._*
+
+### Frontend browser tests ###
+frontend/test-results/
+frontend/playwright-report/

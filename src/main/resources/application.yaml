@@ -4,7 +4,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:55432}/${POSTGRES_DB:fuel_calc}
     username: ${POSTGRES_USER:fuel_calc}
-    password: ${POSTGRES_PASSWORD:fuel_calc}
+    password: ${POSTGRES_PASSWORD:}
   liquibase:
     change-log: classpath:/db/changelog/master.xml
     database-change-log-table: db_migration_log
@@ -55,7 +55,7 @@ imports:
     cron: "${RUSTATA_CRON:0 30 */6 * * *}"
     monthly-interval: PT24H
     base-url: https://rustata.ru
-    token: ${RUSTATA_TOKEN:rst_N9ZiHb3T2srbEG9PMxIAziO0x2FJyhZTAG2txeTkdyc}
+    token: ${RUSTATA_TOKEN:}
     request-interval: PT6S
     page-size: 300
     max-pages: 10

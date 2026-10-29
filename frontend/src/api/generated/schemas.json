@@ -1,0 +1,1321 @@
+{
+  "definitions": {
+    "SortOrder": {
+      "type": "string",
+      "enum": [
+        "ASC",
+        "DESC"
+      ]
+    },
+    "DataVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "SnapshotId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "DecimalString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+      "maxLength": 64
+    },
+    "NullableDecimalString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+      "maxLength": 64,
+      "nullable": true
+    },
+    "NullableSignedDecimalString": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+      "maxLength": 66,
+      "nullable": true
+    },
+    "Money": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{2}$"
+    },
+    "SignedMoney": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)\\.[0-9]{2}$"
+    },
+    "NullablePercent": {
+      "type": "string",
+      "pattern": "^-?(0|[1-9][0-9]*)\\.[0-9]{2}$",
+      "nullable": true
+    },
+    "VolumeLiters": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,6})(\\.[0-9]{1,2})?$",
+      "maxLength": 10
+    },
+    "ApiMeta": {
+      "required": [
+        "requestId",
+        "generatedAt",
+        "serverDate",
+        "dataVersion"
+      ],
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "serverDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "dataVersion": {
+          "$ref": "#/definitions/DataVersion"
+        }
+      }
+    },
+    "RegionCode": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[A-Z0-9][A-Z0-9_-]*$"
+    },
+    "FuelType": {
+      "type": "string",
+      "enum": [
+        "DIESEL",
+        "AI_92",
+        "AI_95"
+      ]
+    },
+    "RegionRef": {
+      "required": [
+        "code",
+        "name"
+      ],
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/RegionCode"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "FuelTypeRef": {
+      "required": [
+        "code",
+        "name"
+      ],
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/FuelType"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "RegionList": {
+      "required": [
+        "meta",
+        "data"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegionRef"
+          }
+        }
+      }
+    },
+    "FuelTypeList": {
+      "required": [
+        "meta",
+        "data"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/FuelTypeRef"
+          }
+        }
+      }
+    },
+    "PriceSource": {
+      "type": "string",
+      "enum": [
+        "ROSSTAT",
+        "RUSTATA",
+        "WHEREFUEL"
+      ]
+    },
+    "SourceFallbackOrder": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PriceSource"
+      },
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "SourceLabel": {
+      "required": [
+        "code",
+        "name"
+      ],
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/PriceSource"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceRef": {
+      "required": [
+        "code",
+        "name",
+        "url"
+      ],
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "nullable": true
+        }
+      }
+    },
+    "RegionalPriceSample": {
+      "required": [
+        "policyCode",
+        "minStationCount",
+        "dayCount",
+        "expectedDayCount",
+        "collectedAt"
+      ],
+      "type": "object",
+      "properties": {
+        "policyCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minStationCount": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 5,
+          "maximum": 20
+        },
+        "dayCount": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 31
+        },
+        "expectedDayCount": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1,
+          "maximum": 31
+        },
+        "collectedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "SourceSummary": {
+      "required": [
+        "provider",
+        "updateKey",
+        "aggregationMethod"
+      ],
+      "type": "object",
+      "oneOf": [
+        {
+          "properties": {
+            "aggregationMethod": {
+              "type": "string",
+              "enum": [
+                "OFFICIAL_STATISTICS"
+              ]
+            }
+          },
+          "not": {
+            "required": [
+              "sample"
+            ]
+          }
+        },
+        {
+          "required": [
+            "sample"
+          ],
+          "properties": {
+            "aggregationMethod": {
+              "type": "string",
+              "enum": [
+                "STATION_SAMPLE_MEAN"
+              ]
+            }
+          }
+        }
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/SourceLabel"
+        },
+        "updateKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aggregationMethod": {
+          "type": "string",
+          "enum": [
+            "OFFICIAL_STATISTICS",
+            "STATION_SAMPLE_MEAN"
+          ]
+        },
+        "sample": {
+          "$ref": "#/definitions/RegionalPriceSample"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceUpdate": {
+      "required": [
+        "provider",
+        "frequency",
+        "status",
+        "lastSuccessAt",
+        "nextExpectedPublicationAt"
+      ],
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/definitions/PriceSource"
+        },
+        "frequency": {
+          "$ref": "#/definitions/Frequency"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "READY",
+            "DELAYED",
+            "UNAVAILABLE",
+            "UNKNOWN"
+          ]
+        },
+        "lastSuccessAt": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true
+        },
+        "nextExpectedPublicationAt": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "SourceUpdates": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/SourceUpdate"
+      }
+    },
+    "Frequency": {
+      "type": "string",
+      "enum": [
+        "WEEKLY",
+        "MONTHLY"
+      ]
+    },
+    "PriceBasis": {
+      "type": "string",
+      "enum": [
+        "REGIONAL_CONSUMER_AVERAGE"
+      ]
+    },
+    "ComparisonSortBy": {
+      "type": "string",
+      "enum": [
+        "PRICE",
+        "REGION_NAME"
+      ]
+    },
+    "PriceSelection": {
+      "required": [
+        "baseRegionCode",
+        "regionCodes",
+        "fuelType",
+        "dateFrom",
+        "dateTo",
+        "frequency",
+        "preferredSource"
+      ],
+      "type": "object",
+      "properties": {
+        "baseRegionCode": {
+          "$ref": "#/definitions/RegionCode"
+        },
+        "regionCodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegionCode"
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true
+        },
+        "fuelType": {
+          "$ref": "#/definitions/FuelType"
+        },
+        "dateFrom": {
+          "type": "string",
+          "format": "date"
+        },
+        "dateTo": {
+          "type": "string",
+          "format": "date"
+        },
+        "frequency": {
+          "$ref": "#/definitions/Frequency"
+        },
+        "preferredSource": {
+          "$ref": "#/definitions/PriceSource"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PriceContext": {
+      "required": [
+        "key",
+        "baseRegion",
+        "regions",
+        "fuelType",
+        "dateFrom",
+        "dateTo",
+        "frequency",
+        "preferredSource",
+        "fallbackOrder",
+        "basis",
+        "unit"
+      ],
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseRegion": {
+          "$ref": "#/definitions/RegionRef"
+        },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegionRef"
+          },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "fuelType": {
+          "$ref": "#/definitions/FuelTypeRef"
+        },
+        "dateFrom": {
+          "type": "string",
+          "format": "date"
+        },
+        "dateTo": {
+          "type": "string",
+          "format": "date"
+        },
+        "frequency": {
+          "$ref": "#/definitions/Frequency"
+        },
+        "preferredSource": {
+          "$ref": "#/definitions/PriceSource"
+        },
+        "fallbackOrder": {
+          "$ref": "#/definitions/SourceFallbackOrder"
+        },
+        "basis": {
+          "$ref": "#/definitions/PriceBasis"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "RUB/L"
+          ]
+        }
+      }
+    },
+    "PricePeriod": {
+      "required": [
+        "key",
+        "frequency",
+        "referenceDate",
+        "label",
+        "startDate",
+        "endDate"
+      ],
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frequency": {
+          "$ref": "#/definitions/Frequency"
+        },
+        "referenceDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "endDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        }
+      }
+    },
+    "MissingPriceReason": {
+      "type": "string",
+      "enum": [
+        "NO_DATA_IN_RANGE",
+        "NO_OBSERVATION_FOR_PERIOD"
+      ]
+    },
+    "AvailablePriceCell": {
+      "required": [
+        "priceRubPerLiter",
+        "observationId",
+        "period",
+        "source",
+        "missingReason"
+      ],
+      "type": "object",
+      "properties": {
+        "priceRubPerLiter": {
+          "$ref": "#/definitions/DecimalString"
+        },
+        "observationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "period": {
+          "$ref": "#/definitions/PricePeriod"
+        },
+        "source": {
+          "$ref": "#/definitions/SourceSummary"
+        },
+        "missingReason": {
+          "type": "string",
+          "nullable": true,
+          "enum": [
+            null
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "MissingPriceCell": {
+      "required": [
+        "priceRubPerLiter",
+        "observationId",
+        "missingReason"
+      ],
+      "type": "object",
+      "properties": {
+        "priceRubPerLiter": {
+          "type": "string",
+          "nullable": true,
+          "enum": [
+            null
+          ]
+        },
+        "observationId": {
+          "type": "string",
+          "nullable": true,
+          "enum": [
+            null
+          ]
+        },
+        "period": {
+          "$ref": "#/definitions/PricePeriod"
+        },
+        "missingReason": {
+          "$ref": "#/definitions/MissingPriceReason"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PriceCell": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/AvailablePriceCell"
+        },
+        {
+          "$ref": "#/definitions/MissingPriceCell"
+        }
+      ]
+    },
+    "PriceSeriesPoint": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PriceCell"
+        },
+        {
+          "type": "object",
+          "required": [
+            "period"
+          ]
+        }
+      ]
+    },
+    "Coverage": {
+      "required": [
+        "region",
+        "fuelType",
+        "frequency",
+        "firstAvailableDate",
+        "lastAvailableDate",
+        "observationCount"
+      ],
+      "type": "object",
+      "properties": {
+        "region": {
+          "$ref": "#/definitions/RegionRef"
+        },
+        "fuelType": {
+          "$ref": "#/definitions/FuelTypeRef"
+        },
+        "frequency": {
+          "$ref": "#/definitions/Frequency"
+        },
+        "firstAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "lastAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "observationCount": {
+          "type": "integer",
+          "format": "int32",
+          "minimum": 0
+        },
+        "latestSource": {
+          "$ref": "#/definitions/PriceSource"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CoverageList": {
+      "required": [
+        "meta",
+        "basis",
+        "preferredSource",
+        "fallbackOrder",
+        "data",
+        "sourceUpdates"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "basis": {
+          "$ref": "#/definitions/PriceBasis"
+        },
+        "preferredSource": {
+          "$ref": "#/definitions/PriceSource"
+        },
+        "fallbackOrder": {
+          "$ref": "#/definitions/SourceFallbackOrder"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Coverage"
+          },
+          "minItems": 2,
+          "maxItems": 24
+        },
+        "sourceUpdates": {
+          "$ref": "#/definitions/SourceUpdates"
+        }
+      }
+    },
+    "PriceChange": {
+      "required": [
+        "status",
+        "startPrice",
+        "absoluteRubPerLiter",
+        "percent"
+      ],
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "INSUFFICIENT_DATA",
+            "ZERO_BASE"
+          ]
+        },
+        "startPrice": {
+          "$ref": "#/definitions/PriceCell"
+        },
+        "absoluteRubPerLiter": {
+          "$ref": "#/definitions/NullableSignedDecimalString"
+        },
+        "percent": {
+          "$ref": "#/definitions/NullablePercent"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ComparisonStatus": {
+      "type": "string",
+      "enum": [
+        "AVAILABLE",
+        "SINGLE_REGION",
+        "NO_COMMON_PERIOD",
+        "NO_DATA"
+      ]
+    },
+    "ComparisonSummary": {
+      "required": [
+        "status",
+        "snapshotId",
+        "basePriceRubPerLiter",
+        "lowestPriceRubPerLiter",
+        "lowestRegions",
+        "lowestDifferenceRubPerLiter",
+        "hasNewerObservations"
+      ],
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/ComparisonStatus"
+        },
+        "snapshotId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "nullable": true
+        },
+        "period": {
+          "$ref": "#/definitions/PricePeriod"
+        },
+        "basePriceRubPerLiter": {
+          "$ref": "#/definitions/NullableDecimalString"
+        },
+        "lowestPriceRubPerLiter": {
+          "$ref": "#/definitions/NullableDecimalString"
+        },
+        "lowestRegions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegionRef"
+          },
+          "maxItems": 4
+        },
+        "lowestDifferenceRubPerLiter": {
+          "$ref": "#/definitions/NullableSignedDecimalString"
+        },
+        "hasNewerObservations": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PriceOverview": {
+      "required": [
+        "meta",
+        "context",
+        "latestPrice",
+        "latestAvailableDate",
+        "change",
+        "comparison",
+        "sourceUpdates"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "context": {
+          "$ref": "#/definitions/PriceContext"
+        },
+        "latestPrice": {
+          "$ref": "#/definitions/PriceCell"
+        },
+        "latestAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "change": {
+          "$ref": "#/definitions/PriceChange"
+        },
+        "comparison": {
+          "$ref": "#/definitions/ComparisonSummary"
+        },
+        "sourceUpdates": {
+          "$ref": "#/definitions/SourceUpdates"
+        }
+      }
+    },
+    "RegionPriceSeries": {
+      "required": [
+        "region",
+        "status",
+        "firstAvailableDate",
+        "lastAvailableDate",
+        "points"
+      ],
+      "type": "object",
+      "properties": {
+        "region": {
+          "$ref": "#/definitions/RegionRef"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "AVAILABLE",
+            "PARTIAL",
+            "NO_DATA"
+          ]
+        },
+        "firstAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "lastAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PriceSeriesPoint"
+          }
+        }
+      }
+    },
+    "PriceTrend": {
+      "required": [
+        "meta",
+        "context",
+        "data",
+        "sourceUpdates"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "context": {
+          "$ref": "#/definitions/PriceContext"
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RegionPriceSeries"
+          },
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "sourceUpdates": {
+          "$ref": "#/definitions/SourceUpdates"
+        }
+      }
+    },
+    "ComparisonRow": {
+      "required": [
+        "region",
+        "isBase",
+        "price",
+        "latestAvailableDate",
+        "differenceRubPerLiter",
+        "isLowest",
+        "isHighest"
+      ],
+      "type": "object",
+      "properties": {
+        "region": {
+          "$ref": "#/definitions/RegionRef"
+        },
+        "isBase": {
+          "type": "boolean"
+        },
+        "price": {
+          "$ref": "#/definitions/PriceCell"
+        },
+        "latestAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "differenceRubPerLiter": {
+          "$ref": "#/definitions/NullableSignedDecimalString"
+        },
+        "isLowest": {
+          "type": "boolean"
+        },
+        "isHighest": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ComparisonInfo": {
+      "required": [
+        "status",
+        "snapshotId",
+        "sortBy",
+        "sortOrder",
+        "allPricesEqual",
+        "hasNewerObservations"
+      ],
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/ComparisonStatus"
+        },
+        "snapshotId": {
+          "type": "string",
+          "nullable": true,
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "period": {
+          "$ref": "#/definitions/PricePeriod"
+        },
+        "sortBy": {
+          "$ref": "#/definitions/ComparisonSortBy"
+        },
+        "sortOrder": {
+          "$ref": "#/definitions/SortOrder"
+        },
+        "allPricesEqual": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "hasNewerObservations": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Comparison": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ComparisonInfo"
+        },
+        {
+          "type": "object",
+          "required": [
+            "data"
+          ],
+          "properties": {
+            "data": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ComparisonRow"
+              },
+              "minItems": 1,
+              "maxItems": 4
+            }
+          }
+        }
+      ]
+    },
+    "PriceComparison": {
+      "required": [
+        "meta",
+        "context",
+        "comparison",
+        "sourceUpdates"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "context": {
+          "$ref": "#/definitions/PriceContext"
+        },
+        "comparison": {
+          "$ref": "#/definitions/Comparison"
+        },
+        "sourceUpdates": {
+          "$ref": "#/definitions/SourceUpdates"
+        }
+      }
+    },
+    "PriceObservation": {
+      "required": [
+        "region",
+        "fuelType",
+        "basis",
+        "unit",
+        "price",
+        "latestAvailableDate",
+        "publisher",
+        "providerUrl",
+        "datasetId",
+        "publicationId",
+        "publicationDate",
+        "publishedAt",
+        "loadedAt",
+        "publicationUrl",
+        "attribution",
+        "methodologyUrl",
+        "note"
+      ],
+      "type": "object",
+      "properties": {
+        "region": {
+          "$ref": "#/definitions/RegionRef"
+        },
+        "fuelType": {
+          "$ref": "#/definitions/FuelTypeRef"
+        },
+        "basis": {
+          "$ref": "#/definitions/PriceBasis"
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "RUB/L"
+          ]
+        },
+        "price": {
+          "$ref": "#/definitions/AvailablePriceCell"
+        },
+        "latestAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "publisher": {
+          "$ref": "#/definitions/SourceRef"
+        },
+        "providerUrl": {
+          "type": "string",
+          "format": "uri",
+          "nullable": true
+        },
+        "datasetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publicationId": {
+          "type": "string",
+          "nullable": true
+        },
+        "publicationDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "date-time",
+          "nullable": true
+        },
+        "loadedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "publicationUrl": {
+          "type": "string",
+          "format": "uri",
+          "nullable": true
+        },
+        "attribution": {
+          "type": "string"
+        },
+        "methodologyUrl": {
+          "type": "string",
+          "format": "uri",
+          "nullable": true
+        },
+        "note": {
+          "type": "string",
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "PriceObservationResponse": {
+      "required": [
+        "meta",
+        "observation",
+        "sourceUpdates"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "observation": {
+          "$ref": "#/definitions/PriceObservation"
+        },
+        "sourceUpdates": {
+          "$ref": "#/definitions/SourceUpdates"
+        }
+      }
+    },
+    "RefuelingCalculateRequest": {
+      "required": [
+        "selection",
+        "volumeLiters"
+      ],
+      "type": "object",
+      "properties": {
+        "selection": {
+          "$ref": "#/definitions/PriceSelection"
+        },
+        "volumeLiters": {
+          "$ref": "#/definitions/VolumeLiters"
+        },
+        "expectedSnapshotId": {
+          "$ref": "#/definitions/SnapshotId"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RefuelingRow": {
+      "required": [
+        "region",
+        "price",
+        "latestAvailableDate",
+        "differenceRubPerLiter",
+        "isLowest",
+        "isHighest",
+        "totalRub",
+        "differenceRub",
+        "relation"
+      ],
+      "type": "object",
+      "properties": {
+        "region": {
+          "$ref": "#/definitions/RegionRef"
+        },
+        "price": {
+          "$ref": "#/definitions/AvailablePriceCell"
+        },
+        "latestAvailableDate": {
+          "type": "string",
+          "format": "date",
+          "nullable": true
+        },
+        "differenceRubPerLiter": {
+          "$ref": "#/definitions/NullableSignedDecimalString"
+        },
+        "isLowest": {
+          "type": "boolean"
+        },
+        "isHighest": {
+          "type": "boolean"
+        },
+        "totalRub": {
+          "$ref": "#/definitions/Money"
+        },
+        "differenceRub": {
+          "$ref": "#/definitions/SignedMoney"
+        },
+        "relation": {
+          "type": "string",
+          "enum": [
+            "BASE",
+            "LOWER",
+            "HIGHER",
+            "EQUAL"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "RefuelingComparison": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ComparisonInfo"
+        },
+        {
+          "type": "object",
+          "required": [
+            "data"
+          ],
+          "properties": {
+            "data": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/RefuelingRow"
+              },
+              "minItems": 1,
+              "maxItems": 4
+            }
+          }
+        }
+      ]
+    },
+    "RefuelingCalculation": {
+      "required": [
+        "meta",
+        "context",
+        "volumeLiters",
+        "currency",
+        "baseTotalRub",
+        "snapshotChanged",
+        "comparison",
+        "sourceUpdates"
+      ],
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/ApiMeta"
+        },
+        "context": {
+          "$ref": "#/definitions/PriceContext"
+        },
+        "volumeLiters": {
+          "$ref": "#/definitions/VolumeLiters"
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "RUB"
+          ]
+        },
+        "baseTotalRub": {
+          "$ref": "#/definitions/Money"
+        },
+        "snapshotChanged": {
+          "type": "boolean",
+          "nullable": true
+        },
+        "comparison": {
+          "$ref": "#/definitions/RefuelingComparison"
+        },
+        "sourceUpdates": {
+          "$ref": "#/definitions/SourceUpdates"
+        }
+      }
+    },
+    "ErrorDetail": {
+      "required": [
+        "field",
+        "code",
+        "message"
+      ],
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string",
+          "nullable": true
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ErrorResponse": {
+      "required": [
+        "type",
+        "message",
+        "timestamp",
+        "requestId",
+        "details"
+      ],
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "InvalidInput",
+            "ResourceNotFound",
+            "DataVersionChanged",
+            "CalculationUnavailable",
+            "InternalError",
+            "ServiceUnavailable"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ErrorDetail"
+          }
+        },
+        "currentDataVersion": {
+          "$ref": "#/definitions/DataVersion"
+        }
+      }
+    }
+  }
+}

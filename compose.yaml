@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-fuel_calc}
       POSTGRES_USER: ${POSTGRES_USER:-fuel_calc}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fuel_calc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
     volumes:
@@ -16,6 +16,66 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 5s
+
+  backend:
+    image: fuel-calc-backend:local
+    build:
+      context: .
+      dockerfile: docker/fuel-calc/backend.Dockerfile
+      target: backend
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-fuel_calc}
+      POSTGRES_USER: ${POSTGRES_USER:-fuel_calc}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      SERVER_PORT: "8080"
+      RUSTATA_TOKEN: ${RUSTATA_TOKEN:-}
+      WHEREFUEL_API_KEY: ${WHEREFUEL_API_KEY:-}
+      IMPORTS_ENABLED: ${IMPORTS_ENABLED:-true}
+      FETCH_ON_STARTUP: ${FETCH_ON_STARTUP:-true}
+      ROSSTAT_ENABLED: ${ROSSTAT_ENABLED:-true}
+      ROSSTAT_FETCH_ON_STARTUP: ${ROSSTAT_FETCH_ON_STARTUP:-true}
+      ROSSTAT_CRON: ${ROSSTAT_CRON:-0 0 */6 * * *}
+      ROSSTAT_IGNORE_TLS_ERRORS: ${ROSSTAT_IGNORE_TLS_ERRORS:-true}
+      RUSTATA_ENABLED: ${RUSTATA_ENABLED:-true}
+      RUSTATA_FETCH_ON_STARTUP: ${RUSTATA_FETCH_ON_STARTUP:-true}
+      RUSTATA_CRON: ${RUSTATA_CRON:-0 30 */6 * * *}
+      WHEREFUEL_ENABLED: ${WHEREFUEL_ENABLED:-false}
+      WHEREFUEL_FETCH_ON_STARTUP: ${WHEREFUEL_FETCH_ON_STARTUP:-false}
+      WHEREFUEL_CRON: ${WHEREFUEL_CRON:-0 45 * * * *}
+      WHEREFUEL_REGION_CODES: ${WHEREFUEL_REGION_CODES:-}
+      IMPORTS_TIME_ZONE: ${IMPORTS_TIME_ZONE:-Europe/Moscow}
+      SOURCE_CONNECT_TIMEOUT: ${SOURCE_CONNECT_TIMEOUT:-PT10S}
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 40s
+
+  frontend:
+    image: fuel-calc-frontend:local
+    build:
+      context: .
+      dockerfile: docker/fuel-calc/frontend.Dockerfile
+      target: frontend
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8081}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
       start_period: 5s
 
 volumes:

@@ -1,5 +1,5 @@
 {
-  "name": "fuel-calc-tooling",
+  "name": "fuel-calc-frontend",
   "private": true,
   "engines": {
     "node": ">=24.8.0"
@@ -12,7 +12,13 @@
     "lint:html": "html-validate \"**/*.html\"",
     "lint": "npm run lint:ts && npm run lint:css && npm run lint:html",
     "typecheck": "node scripts/typecheck.mjs",
-    "check": "npm run typecheck && npm run lint && npm run format:check"
+    "check": "npm run api:check && npm run typecheck && npm run lint && npm run format:check",
+    "dev": "vite --host 127.0.0.1",
+    "build": "npm run api:check && npm run typecheck && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "api:generate": "node scripts/generate-api.mjs",
+    "api:check": "node scripts/generate-api.mjs --check",
+    "test": "playwright test"
   },
   "devDependencies": {
     "@eslint-react/eslint-plugin": "5.28.8",
@@ -27,7 +33,21 @@
     "prettier": "3.9.10",
     "stylelint": "17.16.0",
     "stylelint-config-standard": "40.0.0",
-    "typescript": "6.0.3",
-    "typescript-eslint": "8.72.1"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "8.3.5",
+    "@vitejs/plugin-react": "6.1.2",
+    "openapi-typescript": "7.13.0",
+    "yaml": "2.9.1",
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.6",
+    "@axe-core/playwright": "4.14.0"
+  },
+  "type": "module",
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   }
 }
