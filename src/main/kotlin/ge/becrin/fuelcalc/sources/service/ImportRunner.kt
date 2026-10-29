@@ -5,6 +5,7 @@ import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.jpa.ImportStateStore
 import java.util.concurrent.locks.ReentrantLock
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 
 @Component
@@ -15,7 +16,9 @@ class ImportRunner(
 
     private val http: SourceHttpClient,
 
-    private val states: ImportStateStore
+    private val states: ImportStateStore,
+
+    private val events: ApplicationEventPublisher
 ) {
     private val locks = PriceSource.entries.associateWith { ReentrantLock() }
 
@@ -31,6 +34,8 @@ class ImportRunner(
 
         try {
             http.run(action)
+
+            events.publishEvent(SourceImportCompleted(source))
         } catch (error: InterruptedException) {
             Thread.currentThread().interrupt()
 

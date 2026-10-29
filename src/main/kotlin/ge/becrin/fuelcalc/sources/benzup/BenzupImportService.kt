@@ -3,6 +3,7 @@ package ge.becrin.fuelcalc.sources.benzup
 import ge.becrin.fuelcalc.config.BusinessCalendar
 import ge.becrin.fuelcalc.sources.PriceSource
 import ge.becrin.fuelcalc.sources.SourceProvider
+import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.jpa.PriceImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import ge.becrin.fuelcalc.sources.model.FetchedPrice
@@ -23,12 +24,18 @@ class BenzupImportService(
 
     private val runner: ImportRunner,
 
-    private val calendar: BusinessCalendar
+    private val calendar: BusinessCalendar,
+
+    private val properties: ImportProperties
 ) {
     fun fetch() {
-        runner.run(PriceSource.MARKET) {
-            val today = calendar.today()
+        val today = calendar.today()
 
+        if (today < properties.benzup.startDate) {
+            return
+        }
+
+        runner.run(PriceSource.MARKET) {
             log.info(
                 "Loading data [source={}, provider={}, from={}, until={}]",
                 PriceSource.MARKET, SourceProvider.BENZUP, today, today

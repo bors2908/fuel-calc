@@ -64,6 +64,10 @@ class ImportProperties {
     }
 
     class Benzup {
+        var startDate: LocalDate = LocalDate.of(2026, 1, 1)
+
+        var testBackfillEnabled: Boolean = false
+
         var endpoint: String = "https://api.omt-consult.ru/index/regional"
 
         var token: String = ""

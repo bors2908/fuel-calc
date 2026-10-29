@@ -116,4 +116,15 @@ interface FuelPriceRepository : JpaRepository<FuelPriceEntity, Long> {
         @Param("fuel") fuel: FuelType,
         @Param("source") source: PriceSource
     ): LocalDate?
+
+    @Query("""
+        SELECT price FROM FuelPrice price JOIN FETCH price.region region
+        WHERE price.source = :source
+          AND price.referenceDate = (
+            SELECT MIN(first.referenceDate) FROM FuelPrice first
+            WHERE first.region = price.region AND first.fuel = price.fuel AND first.source = :source
+          )
+        ORDER BY region.okatoCode, price.fuel
+    """)
+    fun findFirstObservations(@Param("source") source: PriceSource): List<FuelPriceEntity>
 }

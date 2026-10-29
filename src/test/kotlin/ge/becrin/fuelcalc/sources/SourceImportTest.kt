@@ -31,7 +31,10 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.context.ApplicationContext
 import org.springframework.context.annotation.Import
+import ge.becrin.fuelcalc.sources.benzup.backfill.BenzupTestBackfill
+import ge.becrin.fuelcalc.sources.benzup.backfill.BenzupTestBackfillStore
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.JdbcTemplate
 import org.testcontainers.junit.jupiter.Container
@@ -40,10 +43,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 
-@SpringBootTest(properties = ["imports.enabled=false"])
+@SpringBootTest(properties = ["imports.enabled=false", "imports.benzup.test-backfill-enabled=false"])
 @Import(SourceTestClockConfiguration::class)
 @Testcontainers
 class SourceImportTest {
+    @Autowired
+    private lateinit var context: ApplicationContext
+
     @Autowired
     private lateinit var stateStore: ImportStateStore
 
@@ -82,6 +88,7 @@ class SourceImportTest {
         properties.rustata.requestInterval = Duration.ZERO
         properties.regions.okatoEndpoint = "$baseUrl/backbone/set/13032"
         properties.regions.selectionEndpoint = "$baseUrl/backbone/set/304297"
+        properties.benzup.startDate = LocalDate.of(2026, 1, 1)
         properties.benzup.endpoint = "$baseUrl/market"
         failFromYear = null
         fallbackUnavailable = false
@@ -239,6 +246,35 @@ class SourceImportTest {
         assertEquals(listOf(valid.regionCode), jdbc.queryForList(
             "SELECT okato_code FROM regions WHERE has_data", String::class.java
         ))
+    }
+
+    @Test
+    fun testFutureMarketStartDateDoesNotRequestOrStorePrices() {
+        properties.benzup.startDate = LocalDate.of(2026, 10, 27)
+
+        market.fetch()
+
+        assertFalse(requests.any { it == "/market" })
+        assertEquals(0L, countPrices())
+        assertNull(stateStore.fetchedThrough(PriceSource.MARKET))
+    }
+
+    @Test
+    fun testFallbackHonorsItsOwnStartDate() {
+        failFromYear = 2025
+        properties.rustata.startDate = LocalDate.of(2026, 1, 1)
+
+        official.fetch()
+
+        assertFalse(requests.any { it.startsWith("/api/v1/data") })
+        assertEquals(0L, countPrices())
+        assertNull(stateStore.fetchedThrough())
+    }
+
+    @Test
+    fun testBackfillBeansAreAbsentWhenDisabled() {
+        assertTrue(context.getBeansOfType(BenzupTestBackfill::class.java).isEmpty())
+        assertTrue(context.getBeansOfType(BenzupTestBackfillStore::class.java).isEmpty())
     }
 
     private fun countPrices(): Long =

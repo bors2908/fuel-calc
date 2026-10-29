@@ -61,6 +61,9 @@ imports:
     page-size: 300
     max-pages: 20
   benzup:
+    start-date: ${BENZUP_START_DATE:2026-01-01}
+    # Test data generator only; never enable in production.
+    test-backfill-enabled: ${BENZUP_TEST_BACKFILL_ENABLED:false}
     cron: "${BENZUP_CRON:0 0 12 * * *}"
     endpoint: ${BENZUP_ENDPOINT:https://api.omt-consult.ru/index/regional}
     token: ${BENZUP_TOKEN:}
