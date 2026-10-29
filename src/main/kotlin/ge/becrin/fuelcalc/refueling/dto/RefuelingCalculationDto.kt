@@ -1,10 +1,13 @@
 package ge.becrin.fuelcalc.refueling.dto
 
 import ge.becrin.fuelcalc.api.dto.ApiMetaDto
+import ge.becrin.fuelcalc.prices.dto.PricePageContextDto
 import ge.becrin.fuelcalc.sources.dto.SourceUpdateDto
 
 data class RefuelingCalculationDto(
     val meta: ApiMetaDto,
+
+    val context: PricePageContextDto,
 
     val volumeLiters: String,
 

@@ -1,6 +1,8 @@
 import type { Schema } from "../api/types";
-import { sourceNames } from "../api/types";
+import { sourceInfo } from "../sources/model";
 import { timestamp } from "../ui/format";
+
+import "./archive-info.css";
 
 export function ArchiveInfo({ updates }: { updates: Schema<"SourceUpdates"> }) {
   return (
@@ -14,8 +16,7 @@ export function ArchiveInfo({ updates }: { updates: Schema<"SourceUpdates"> }) {
         {Object.entries(updates).map(([key, update]) => (
           <li key={key}>
             <strong>
-              {sourceNames[update.source]} ·{" "}
-              {update.source === "OFFICIAL" ? "Росстат / rustata" : "BenzUp"}
+              {sourceInfo[update.source].name} · {sourceInfo[update.source].provider}
             </strong>
             <span>
               {

@@ -1,0 +1,29 @@
+.archive-info {
+  margin-block: 2rem;
+  padding-block: 2rem;
+  border-block: 1px solid var(--line);
+}
+
+.archive-info h2 {
+  font-size: 1.5rem;
+}
+
+.source-updates {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1rem;
+  display: grid;
+  padding: 0;
+  list-style: none;
+}
+
+.source-updates li {
+  flex-direction: column;
+  gap: 0.35rem;
+  display: flex;
+  padding-block: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.source-updates small {
+  color: var(--muted);
+}

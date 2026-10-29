@@ -1,10 +1,13 @@
 package ge.becrin.fuelcalc.sources
 
+import ge.becrin.fuelcalc.config.BusinessCalendar
 import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.service.OfficialImportService
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.RegionCatalogService
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
 import org.springframework.beans.factory.annotation.Autowired
@@ -14,15 +17,14 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
-import java.time.LocalDate
-import java.time.ZoneId
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 @SpringBootTest(properties = ["imports.enabled=false", "imports.fetch-on-startup=false"])
 @Testcontainers
 @EnabledIfEnvironmentVariable(named = "LIVE_SOURCE_TEST", matches = "true")
 class LiveSourceFetchTest {
+    @Autowired
+    private lateinit var calendar: BusinessCalendar
+
     @Autowired
     private lateinit var regions: RegionCatalogService
 
@@ -43,7 +45,7 @@ class LiveSourceFetchTest {
 
     @Test
     fun testRealJsonEndpointsImportIntoIsolatedPostgres() {
-        val today = LocalDate.now(ZoneId.of(properties.timeZone))
+        val today = calendar.today()
         properties.rosstat.startDate = today.minusWeeks(2)
         properties.rustata.startDate = properties.rosstat.startDate
 
@@ -73,7 +75,7 @@ class LiveSourceFetchTest {
     @Test
     @EnabledIfEnvironmentVariable(named = "RUSTATA_TOKEN", matches = ".+")
     fun testRealRustataFallbackIntoSameOfficialSeries() {
-        val today = LocalDate.now(ZoneId.of(properties.timeZone))
+        val today = calendar.today()
         properties.rosstat.startDate = today.minusWeeks(2)
         properties.rustata.startDate = properties.rosstat.startDate
 

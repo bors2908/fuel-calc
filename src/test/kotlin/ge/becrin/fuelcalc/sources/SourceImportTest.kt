@@ -4,12 +4,27 @@ import com.sun.net.httpserver.HttpServer
 import ge.becrin.fuelcalc.fuels.FuelType
 import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.jpa.ImportStore
+import ge.becrin.fuelcalc.sources.jpa.ImportStateStore
+import ge.becrin.fuelcalc.sources.jpa.PriceImportStore
+import ge.becrin.fuelcalc.sources.jpa.RegionImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import ge.becrin.fuelcalc.sources.model.FetchedPrice
 import ge.becrin.fuelcalc.sources.service.OfficialImportService
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.RegionCatalogService
+import java.net.InetSocketAddress
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
+import java.time.DayOfWeek
+import java.time.Duration
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -24,24 +39,17 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
-import java.net.InetSocketAddress
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
-import java.time.DayOfWeek
-import java.time.Duration
-import java.time.LocalDate
-import java.time.temporal.TemporalAdjusters
-import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 @SpringBootTest(properties = ["imports.enabled=false"])
 @Import(SourceTestClockConfiguration::class)
 @Testcontainers
 class SourceImportTest {
+    @Autowired
+    private lateinit var stateStore: ImportStateStore
+
+    @Autowired
+    private lateinit var regionStore: RegionImportStore
+
     @Autowired
     private lateinit var official: OfficialImportService
 
@@ -58,7 +66,7 @@ class SourceImportTest {
     private lateinit var properties: ImportProperties
 
     @Autowired
-    private lateinit var store: ImportStore
+    private lateinit var store: PriceImportStore
 
     @Autowired
     private lateinit var jdbc: JdbcTemplate
@@ -106,17 +114,17 @@ class SourceImportTest {
 
         assertTrue(catalogService.refresh())
         assertEquals(saved, catalog.regions)
-        assertEquals(saved.toSet(), store.savedRegions().toSet())
+        assertEquals(saved.toSet(), regionStore.savedRegions().toSet())
     }
 
     @Test
     fun testBrokenMaskCannotReplaceCatalogOrItsHash() {
         val hash = jdbc.queryForObject("SELECT content_hash FROM import_states WHERE code='REGIONS'", String::class.java)
-        val saved = store.savedRegions()
+        val saved = regionStore.savedRegions()
         malformedMask = true
 
         assertTrue(catalogService.refresh())
-        assertEquals(saved, store.savedRegions())
+        assertEquals(saved, regionStore.savedRegions())
         assertEquals(hash, jdbc.queryForObject("SELECT content_hash FROM import_states WHERE code='REGIONS'", String::class.java))
     }
 
@@ -124,8 +132,11 @@ class SourceImportTest {
     fun testOfficialHistoryPagesByCalendarYearAndResumesFromSuccessfulCheckpoint() {
         official.fetch()
 
-        assertEquals(LocalDate.of(2026, 10, 26), store.fetchedThrough())
+        assertEquals(LocalDate.of(2026, 10, 26), stateStore.fetchedThrough())
         assertEquals(setOf(2025, 2026), reportYears())
+        assertEquals(1, requests.count { it == "/olap2/olap2-descriptor-report/274422/" })
+        // One read belongs to catalog setup and one to this import, regardless of year count.
+        assertEquals(2, requests.count { it == "/backbone/set/13032" })
         assertFalse(requests.any { it.startsWith("/api/v1/data") })
         assertTrue(countPrices() > 1000)
 
@@ -135,6 +146,7 @@ class SourceImportTest {
         official.fetch()
 
         assertEquals(setOf(2026), reportYears())
+        assertEquals(1, requests.count { it == "/backbone/set/13032" })
         assertEquals(count, countPrices())
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(DISTINCT source) FROM fuel_prices", Long::class.java))
     }
@@ -145,7 +157,7 @@ class SourceImportTest {
 
         official.fetch()
 
-        assertEquals(LocalDate.of(2026, 10, 26), store.fetchedThrough())
+        assertEquals(LocalDate.of(2026, 10, 26), stateStore.fetchedThrough())
         assertEquals(2L, countPrices())
         assertEquals(setOf("RUSTATA"), jdbc.queryForList("SELECT DISTINCT provider FROM fuel_prices", String::class.java).toSet())
         assertEquals(setOf("OFFICIAL"), jdbc.queryForList("SELECT DISTINCT source FROM fuel_prices", String::class.java).toSet())
@@ -158,7 +170,7 @@ class SourceImportTest {
 
         official.fetch()
 
-        assertEquals(LocalDate.of(2025, 12, 31), store.fetchedThrough())
+        assertEquals(LocalDate.of(2025, 12, 31), stateStore.fetchedThrough())
 
         val completed = countPrices()
 
@@ -170,7 +182,7 @@ class SourceImportTest {
 
         official.fetch()
 
-        assertEquals(LocalDate.of(2026, 10, 26), store.fetchedThrough())
+        assertEquals(LocalDate.of(2026, 10, 26), stateStore.fetchedThrough())
         assertTrue(countPrices() > completed)
         assertEquals(setOf(2025, 2026), reportYears())
     }
@@ -182,7 +194,7 @@ class SourceImportTest {
 
         official.fetch()
 
-        assertNull(store.fetchedThrough())
+        assertNull(stateStore.fetchedThrough())
         assertEquals(0L, countPrices())
         assertTrue(jdbc.queryForObject(
             "SELECT error_message FROM import_states WHERE code='OFFICIAL'", String::class.java
@@ -199,7 +211,7 @@ class SourceImportTest {
         assertEquals(setOf("2026-10-26"), jdbc.queryForList("SELECT DISTINCT reference_date::text FROM fuel_prices", String::class.java).toSet())
         assertEquals(setOf("DAILY"), jdbc.queryForList("SELECT DISTINCT frequency FROM fuel_prices", String::class.java).toSet())
         assertEquals(setOf("MARKET"), jdbc.queryForList("SELECT DISTINCT source FROM fuel_prices", String::class.java).toSet())
-        assertNull(store.fetchedThrough())
+        assertNull(stateStore.fetchedThrough())
 
         market.fetch()
 
@@ -220,7 +232,7 @@ class SourceImportTest {
 
         assertEquals(0L, countPrices())
         assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM regions WHERE has_data", Long::class.java))
-        assertNull(store.fetchedThrough())
+        assertNull(stateStore.fetchedThrough())
 
         store.saveWindow(SourceProvider.ROSSTAT, window, listOf(valid))
 

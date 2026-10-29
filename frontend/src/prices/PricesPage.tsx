@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
-import type { Selection } from "../api/types";
-import type { Catalog } from "../selection/model";
-import { selectionHref, selectionKey } from "../selection/model";
+import type { PriceSelection } from "../selection/types";
+import type { Catalog } from "../selection/types";
+import { selectionHref, selectionKey, priceSelectionModel } from "../selection/model";
 import { useSelection } from "../selection/useSelection";
+import { EmptyRegionCatalog } from "../selection/EmptyRegionCatalog";
 import { Filters } from "../selection/Filters";
 import { SiteHeader } from "../app/SiteHeader";
-import { regionName } from "../regions/regionName";
 import { Feedback, Loading } from "../ui/Feedback";
 import { date } from "../ui/format";
 import { Overview } from "./Overview";
@@ -15,13 +15,15 @@ import { ArchiveInfo } from "./ArchiveInfo";
 import { usePrices } from "./usePrices";
 import { ObservationDialog } from "../observations/ObservationDialog";
 
+import "./prices-page.css";
+
 export function PricesPage({ catalog }: { catalog: Catalog }) {
   const [observation, setObservation] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const prices = usePrices();
   const { load, clear, cancelLoad } = prices;
   const apply = useCallback(
-    (value: Selection) => {
+    (value: PriceSelection) => {
       setObservation(null);
       return load(value);
     },
@@ -31,7 +33,11 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
     setObservation(null);
     clear();
   }, [clear]);
-  const filters = useSelection(catalog, apply, reset, cancelLoad);
+  const filters = useSelection(catalog, priceSelectionModel, {
+    onApply: apply,
+    onClear: reset,
+    onInvalidate: cancelLoad,
+  });
   const { selection, applied, error: validation } = filters;
   const closeObservation = useCallback(() => setObservation(null), []);
   // Returning to the landing URL unmounts results rather than reusing a previous selection.
@@ -41,7 +47,7 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
   );
   const displayMatches = page && applied && selectionKey(page.selection) === selectionKey(applied);
   const blocked = !filters.valid || prices.busy || !displayMatches;
-  function changeSelection(value: Selection) {
+  function changeSelection(value: PriceSelection) {
     setObservation(null);
     setFiltersOpen(true);
     filters.change(value);
@@ -81,18 +87,7 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
           className={`filter-panel${filtersOpen || !page ? " filters-open" : ""}`}
         >
           {catalog.regions.length === 0 && (
-            <p
-              className="empty-state"
-              role="status"
-            >
-              Цены пока не загружены. Список регионов появится после первой загрузки данных.{" "}
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-              >
-                Обновить список
-              </button>
-            </p>
+            <EmptyRegionCatalog onReload={() => window.location.reload()} />
           )}
           <Filters
             catalog={catalog}
@@ -116,51 +111,40 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
           >
             <div className="applied-context">
               <strong>
-                {regionName(page.overview.context.baseRegion)} ·{" "}
-                {page.overview.context.fuelType.name}
+                {page.context.baseRegion.name} · {page.context.fuelType.name}
               </strong>
               <span>
-                {date(page.overview.context.dateFrom)} — {date(page.overview.context.dateTo)}
+                {date(page.context.dateFrom)} — {date(page.context.dateTo)}
               </span>
             </div>
             <Overview
-              value={page.marketOverview}
-              official={page.officialOverview}
+              market={page.sources.MARKET.overview}
+              official={page.sources.OFFICIAL.overview}
               showComparison={showComparison}
               onObservation={setObservation}
-              onRetry={refresh}
             />
             <Trend
-              key={page.overview.context.key}
-              context={page.overview.context}
-              market={page.trend}
-              official={page.officialTrend}
+              key={selectionKey(page.selection)}
+              context={page.context}
+              market={page.sources.MARKET.trend}
+              official={page.sources.OFFICIAL.trend}
               onObservation={setObservation}
-              onRetry={refresh}
             />
             {showComparison && (
               <Comparison
-                official={page.officialComparison}
-                market={page.comparison}
-                regions={page.overview.context.regions}
+                official={page.sources.OFFICIAL.comparison}
+                market={page.sources.MARKET.comparison}
                 baseRegionCode={page.selection.baseRegionCode}
                 ordering={page.comparisonOrder}
                 disabled={blocked}
-                onSort={(source, sorting) => {
-                  void prices.sort(source, sorting);
+                onSort={(sorting) => {
+                  void prices.sort(sorting);
                 }}
                 onBase={(code) => changeSelection({ ...page.selection, baseRegionCode: code })}
                 onObservation={setObservation}
-                onRetry={refresh}
               />
             )}
-            <ArchiveInfo
-              updates={{
-                ...page.overview.sourceUpdates,
-                ...page.trend.value?.sourceUpdates,
-                ...page.officialTrend.value?.sourceUpdates,
-              }}
-            />
+            <ArchiveInfo updates={page.sourceUpdates} />
             {observation && (
               <ObservationDialog
                 key={observation}

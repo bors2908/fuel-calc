@@ -30,10 +30,12 @@ management:
         include: health
 
 
+calendar:
+  time-zone: ${IMPORTS_TIME_ZONE:Europe/Moscow}
+
 imports:
   enabled: ${IMPORTS_ENABLED:true}
   fetch-on-startup: ${FETCH_ON_STARTUP:true}
-  time-zone: ${IMPORTS_TIME_ZONE:Europe/Moscow}
   connect-timeout: ${SOURCE_CONNECT_TIMEOUT:PT10S}
   request-timeout: PT30S
   max-response-bytes: 33554432

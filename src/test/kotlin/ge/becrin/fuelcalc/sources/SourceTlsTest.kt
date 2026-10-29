@@ -5,7 +5,8 @@ import com.sun.net.httpserver.HttpsServer
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.service.SourceHttpClient
 import ge.becrin.fuelcalc.sources.service.SourceImportException
-import org.junit.jupiter.api.Test
+import ge.becrin.fuelcalc.sources.service.SourceJson
+import ge.becrin.fuelcalc.sources.service.SourceTransport
 import java.net.InetSocketAddress
 import java.net.URI
 import java.nio.file.Files
@@ -18,13 +19,14 @@ import javax.net.ssl.SSLException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Test
 
 class SourceTlsTest {
     @Test
     fun testConfiguredRosstatHostCanLoadWithUntrustedCertificate() {
         TlsSource().use { source ->
             val properties = properties(source.uri, true)
-            val result = SourceHttpClient(properties, Clock.systemUTC()).read(source.uri) { Files.readString(it) }
+            val result = client(properties).read(source.uri) { Files.readString(it) }
 
             assertEquals("test payload", result)
         }
@@ -35,7 +37,7 @@ class SourceTlsTest {
         TlsSource().use { source ->
             val properties = ImportProperties().also { it.requestTimeout = Duration.ofSeconds(5) }
             val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties, Clock.systemUTC()).read(source.uri) { Files.readString(it) }
+                client(properties).read(source.uri) { Files.readString(it) }
             }
 
             assertTlsFailureWithRequestAndCause(error, source.uri)
@@ -46,12 +48,15 @@ class SourceTlsTest {
     fun testRosstatCertificateValidationCanBeReenabled() {
         TlsSource().use { source ->
             val error = assertFailsWith<SourceImportException> {
-                SourceHttpClient(properties(source.uri, false), Clock.systemUTC()).read(source.uri) { Files.readString(it) }
+                client(properties(source.uri, false)).read(source.uri) { Files.readString(it) }
             }
 
             assertTlsFailureWithRequestAndCause(error, source.uri)
         }
     }
+
+    private fun client(properties: ImportProperties): SourceHttpClient =
+        SourceHttpClient(SourceTransport(properties), properties, Clock.systemUTC(), SourceJson())
 
     private fun properties(
         uri: URI,

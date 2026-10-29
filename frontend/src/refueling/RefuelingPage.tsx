@@ -1,6 +1,7 @@
 import { SiteHeader } from "../app/SiteHeader";
-import type { Catalog } from "../selection/model";
-import { selectionHref, withDefaultRange } from "../selection/model";
+import type { Catalog } from "../selection/types";
+import { selectionHref, refuelingSelectionModel } from "../selection/model";
+import { EmptyRegionCatalog } from "../selection/EmptyRegionCatalog";
 import { Filters } from "../selection/Filters";
 import { useSelection } from "../selection/useSelection";
 import { Calculator } from "./Calculator";
@@ -8,13 +9,9 @@ import { useRefueling } from "./useRefueling";
 
 export function RefuelingPage({ catalog }: { catalog: Catalog }) {
   const calculation = useRefueling();
-  const filters = useSelection(
-    catalog,
-    calculation.invalidate,
-    calculation.invalidate,
-    calculation.invalidate,
-    "date",
-  );
+  const filters = useSelection(catalog, refuelingSelectionModel, {
+    onInvalidate: calculation.invalidate,
+  });
   return (
     <>
       <SiteHeader
@@ -28,7 +25,7 @@ export function RefuelingPage({ catalog }: { catalog: Catalog }) {
         <section className="hero hero-compact">
           <a
             className="back-link"
-            href={selectionHref(withDefaultRange(filters.selection), "/")}
+            href={selectionHref(filters.selection, "/")}
           >
             ← К ценам и динамике
           </a>
@@ -48,14 +45,7 @@ export function RefuelingPage({ catalog }: { catalog: Catalog }) {
           }}
           onChange={calculation.invalidate}
         >
-          {catalog.regions.length === 0 && (
-            <p
-              className="volume-hint"
-              role="status"
-            >
-              Цены пока не загружены. Список регионов появится после первой загрузки данных.
-            </p>
-          )}
+          {catalog.regions.length === 0 && <EmptyRegionCatalog className="volume-hint" />}
           <Filters
             catalog={catalog}
             value={filters.selection}

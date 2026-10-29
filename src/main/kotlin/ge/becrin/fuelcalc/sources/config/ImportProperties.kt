@@ -1,9 +1,14 @@
 package ge.becrin.fuelcalc.sources.config
 
-import org.springframework.boot.context.properties.ConfigurationProperties
+import jakarta.validation.Valid
+import jakarta.validation.constraints.AssertTrue
+import jakarta.validation.constraints.Min
 import java.time.Duration
 import java.time.LocalDate
+import org.springframework.boot.context.properties.ConfigurationProperties
+import org.springframework.validation.annotation.Validated
 
+@Validated
 @ConfigurationProperties("imports")
 class ImportProperties {
     class Regions {
@@ -28,6 +33,11 @@ class ImportProperties {
         var ignoreTlsErrors: Boolean = true
 
         var requestTimeout: Duration = Duration.ofMinutes(2)
+
+        @get:AssertTrue(message = "Rosstat request timeout must be positive")
+        val validTimeout: Boolean
+            get() =
+                requestTimeout > Duration.ZERO
     }
 
     class Rustata {
@@ -41,9 +51,16 @@ class ImportProperties {
 
         var requestInterval: Duration = Duration.ofSeconds(6)
 
+        @field:Min(1)
         var pageSize: Int = 300
 
+        @field:Min(1)
         var maxPages: Int = 20
+
+        @get:AssertTrue(message = "Rustata request interval must not be negative")
+        val validInterval: Boolean
+            get() =
+                requestInterval >= Duration.ZERO
     }
 
     class Benzup {
@@ -58,21 +75,29 @@ class ImportProperties {
 
     var fetchOnStartup: Boolean = true
 
-    var timeZone: String = "Europe/Moscow"
-
     var connectTimeout: Duration = Duration.ofSeconds(10)
 
     var requestTimeout: Duration = Duration.ofSeconds(30)
 
+    @field:Min(1)
     var maxResponseBytes: Int = 32 * 1024 * 1024
 
     var maxRunDuration: Duration = Duration.ofMinutes(30)
 
+    @get:AssertTrue(message = "Source timeouts and run duration must be positive")
+    val validDurations: Boolean
+        get() =
+            connectTimeout > Duration.ZERO && requestTimeout > Duration.ZERO && maxRunDuration > Duration.ZERO
+
+    @field:Valid
     var regions: Regions = Regions()
 
+    @field:Valid
     var rosstat: Rosstat = Rosstat()
 
+    @field:Valid
     var rustata: Rustata = Rustata()
 
+    @field:Valid
     var benzup: Benzup = Benzup()
 }

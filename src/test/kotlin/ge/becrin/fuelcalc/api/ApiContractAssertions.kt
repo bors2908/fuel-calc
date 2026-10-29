@@ -29,9 +29,7 @@ class ApiContractAssertions {
                 status >= 400 -> "ErrorResponse"
                 path == "/api/v1/regions" -> "RegionList"
                 path == "/api/v1/fuel-types" -> "FuelTypeList"
-                path.endsWith("/overview") -> "PriceOverview"
-                path.endsWith("/trend") -> "PriceTrend"
-                path.endsWith("/comparison") -> "PriceComparison"
+                path == "/api/v1/fuel-prices" -> "PricePage"
                 path.contains("/observations/") -> "PriceObservationResponse"
                 path.endsWith("/calculate") -> "RefuelingCalculation"
                 else -> error("Unknown API path: $path")

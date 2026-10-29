@@ -1,7 +1,6 @@
 package ge.becrin.fuelcalc.prices.model
 
 import ge.becrin.fuelcalc.prices.ComparisonStatus
-import ge.becrin.fuelcalc.prices.dto.PricePeriodDto
 
 data class ComparisonSnapshot(
     val selection: PriceSelection,
@@ -10,9 +9,7 @@ data class ComparisonSnapshot(
 
     val rows: List<PriceRow>,
 
-    val period: PricePeriodDto?,
-
-    val snapshotId: String?,
+    val period: PricePeriod?,
 
     val hasNewerObservations: Boolean
 )

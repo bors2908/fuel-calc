@@ -3,10 +3,12 @@ package ge.becrin.fuelcalc.prices.service
 import ge.becrin.fuelcalc.api.dto.ErrorDetailDto
 import ge.becrin.fuelcalc.api.error.ApiException
 import ge.becrin.fuelcalc.archive.service.ArchiveReadService
-import ge.becrin.fuelcalc.prices.PriceBasis
+import ge.becrin.fuelcalc.fuels.dto.FuelTypeRefDto
 import ge.becrin.fuelcalc.prices.dto.PriceObservationDto
 import ge.becrin.fuelcalc.prices.dto.PriceObservationResponseDto
 import ge.becrin.fuelcalc.prices.jpa.PriceQueryExecutor
+import ge.becrin.fuelcalc.regions.dto.RegionRefDto
+import ge.becrin.fuelcalc.sources.dto.SourceRefDto
 import ge.becrin.fuelcalc.sources.service.SourceUpdateReader
 import org.springframework.stereotype.Service
 
@@ -41,13 +43,11 @@ class FuelPriceObservationService(
             PriceObservationResponseDto(
                 meta,
                 PriceObservationDto(
-                    region = row.region,
-                    fuelType = row.fuel,
-                    basis = PriceBasis.REGIONAL_CONSUMER_AVERAGE,
-                    unit = "RUB/L",
+                    region = RegionRefDto(row.region),
+                    fuelType = FuelTypeRefDto(row.fuel),
                     price = price,
-                    latestAvailableDate = query.latestForProvider(row),
-                    provider = details.provider,
+                    latestAvailableDate = query.latestForSource(row),
+                    provider = SourceRefDto(details.provider),
                     publicationDate = details.publicationDate,
                     loadedAt = details.loadedAt
                 ),

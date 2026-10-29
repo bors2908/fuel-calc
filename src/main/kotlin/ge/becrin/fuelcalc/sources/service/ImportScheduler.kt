@@ -2,13 +2,13 @@ package ge.becrin.fuelcalc.sources.service
 
 import ge.becrin.fuelcalc.sources.benzup.BenzupImportService
 import ge.becrin.fuelcalc.sources.config.ImportProperties
+import java.time.Clock
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.scheduling.TaskScheduler
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.time.Clock
 
 @Component
 class ImportScheduler(
@@ -43,17 +43,17 @@ class ImportScheduler(
         }, clock.instant())
     }
 
-    @Scheduled(cron = "\${imports.regions.cron:0 0 3 * * MON}", zone = "\${imports.time-zone:Europe/Moscow}")
+    @Scheduled(cron = "\${imports.regions.cron:0 0 3 * * MON}", zone = "\${calendar.time-zone:Europe/Moscow}")
     fun regions() {
         safely { regions.refresh() }
     }
 
-    @Scheduled(cron = "\${imports.rosstat.cron:0 0 0 * * *}", zone = "\${imports.time-zone:Europe/Moscow}")
+    @Scheduled(cron = "\${imports.rosstat.cron:0 0 0 * * *}", zone = "\${calendar.time-zone:Europe/Moscow}")
     fun official() {
         safely { official.fetch() }
     }
 
-    @Scheduled(cron = "\${imports.benzup.cron:0 0 12 * * *}", zone = "\${imports.time-zone:Europe/Moscow}")
+    @Scheduled(cron = "\${imports.benzup.cron:0 0 12 * * *}", zone = "\${calendar.time-zone:Europe/Moscow}")
     fun market() {
         safely { market.fetch() }
     }

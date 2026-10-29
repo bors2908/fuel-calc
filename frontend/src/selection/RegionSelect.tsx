@@ -1,6 +1,6 @@
-import { regionName } from "../regions/regionName";
 import { useEffect, useId, useRef, useState } from "react";
-import type { Catalog } from "./model";
+import { filterRegions } from "./regionSearch";
+import type { Catalog } from "./types";
 
 type Props = {
   regions: Catalog["regions"];
@@ -15,9 +15,7 @@ export function RegionSelect({ regions, value, onChange }: Props) {
   const [search, setSearch] = useState("");
   const [activeCode, setActiveCode] = useState("");
   const selected = regions.find((region) => region.okatoCode === value);
-  const matches = regions.filter((region) =>
-    regionName(region).toLocaleLowerCase("ru").includes(search.trim().toLocaleLowerCase("ru")),
-  );
+  const matches = filterRegions(regions, search);
   const active = matches.find((region) => region.okatoCode === activeCode);
 
   useEffect(() => {
@@ -54,7 +52,7 @@ export function RegionSelect({ regions, value, onChange }: Props) {
         aria-required="true"
         autoComplete="off"
         placeholder={open ? "Введите название региона" : "Выберите регион"}
-        value={open ? search : selected ? regionName(selected) : ""}
+        value={open ? search : selected ? selected.name : ""}
         onFocus={expand}
         onClick={expand}
         onBlur={() => setOpen(false)}
@@ -111,7 +109,7 @@ export function RegionSelect({ regions, value, onChange }: Props) {
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => select(region.okatoCode)}
               >
-                <span>{regionName(region)}</span>
+                <span>{region.name}</span>
                 {region.okatoCode === value && <span aria-hidden="true">✓</span>}
               </li>
             ))}

@@ -1,6 +1,5 @@
 package ge.becrin.fuelcalc.api.dto
 
-import com.fasterxml.jackson.annotation.JsonInclude
 import java.time.Instant
 
 data class ErrorResponseDto(
@@ -12,8 +11,5 @@ data class ErrorResponseDto(
 
     val requestId: String,
 
-    val details: List<ErrorDetailDto>,
-
-    @get:JsonInclude(JsonInclude.Include.NON_NULL)
-    val currentDataVersion: String? = null
+    val details: List<ErrorDetailDto>
 )

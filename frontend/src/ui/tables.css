@@ -1,0 +1,29 @@
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  inline-size: 100%;
+}
+
+caption {
+  padding-block-end: 1rem;
+  color: var(--muted);
+  text-align: start;
+  font-size: 0.875rem;
+}
+
+th,
+td {
+  padding: 1rem;
+  border-block-end: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}

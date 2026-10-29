@@ -1,15 +1,10 @@
 package ge.becrin.fuelcalc.sources.service
 
+import ge.becrin.fuelcalc.regions.model.Region
 import org.springframework.stereotype.Component
 
 @Component
 class RegionCatalog {
-    data class Region(
-        val okatoCode: String,
-
-        val name: String
-    )
-
     @Volatile
     private var snapshot: Map<String, Region> = emptyMap()
 

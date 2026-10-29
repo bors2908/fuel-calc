@@ -1,18 +1,17 @@
 package ge.becrin.fuelcalc.sources.service
 
+import ge.becrin.fuelcalc.config.BusinessCalendar
 import ge.becrin.fuelcalc.sources.PriceSource
 import ge.becrin.fuelcalc.sources.SourceProvider
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.jpa.ImportStore
+import ge.becrin.fuelcalc.sources.jpa.ImportStateStore
+import ge.becrin.fuelcalc.sources.jpa.PriceImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import ge.becrin.fuelcalc.sources.rosstat.RosstatClient
+import ge.becrin.fuelcalc.sources.rosstat.RosstatReportDefinition
 import ge.becrin.fuelcalc.sources.rustata.RustataClient
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.time.Clock
-import java.time.LocalDate
-import java.time.ZoneId
-import java.util.concurrent.locks.ReentrantLock
 
 @Service
 class OfficialImportService(
@@ -20,28 +19,21 @@ class OfficialImportService(
 
     private val rustata: RustataClient,
 
-    private val http: SourceHttpClient,
+    private val runner: ImportRunner,
 
-    private val store: ImportStore,
+    private val states: ImportStateStore,
 
-    private val catalog: RegionCatalog,
+    private val store: PriceImportStore,
 
     private val properties: ImportProperties,
 
-    private val clock: Clock
+    private val calendar: BusinessCalendar
 ) {
-    private val lock = ReentrantLock()
-
     fun fetch() {
-        if (!properties.enabled || !catalog.isReady || !lock.tryLock()) {
-            return
-        }
-
-        try {
-            http.beginRun()
-
-            val today = LocalDate.now(clock.withZone(ZoneId.of(properties.timeZone)))
-            var from = maxOf(properties.rosstat.startDate, store.fetchedThrough()?.minusWeeks(1) ?: properties.rosstat.startDate)
+        runner.run(PriceSource.OFFICIAL) {
+            val today = calendar.today()
+            var from = maxOf(properties.rosstat.startDate, states.fetchedThrough()?.minusWeeks(1) ?: properties.rosstat.startDate)
+            var definition: RosstatReportDefinition? = null
 
             while (from <= today) {
                 val until = minOf(from.withMonth(12).withDayOfMonth(31), today)
@@ -54,7 +46,13 @@ class OfficialImportService(
 
                 val (provider, prices) =
                     try {
-                        SourceProvider.ROSSTAT to rosstat.fetch(window)
+                        val prepared = definition ?: rosstat.prepare().also { definition = it }
+
+                        SourceProvider.ROSSTAT to rosstat.fetch(window, prepared)
+                    } catch (error: InterruptedException) {
+                        Thread.currentThread().interrupt()
+
+                        throw error
                     } catch (error: Exception) {
                         log.warn(
                             "Data provider unavailable; trying fallback [source={}, provider={}, fallbackProvider={}, from={}, until={}]",
@@ -81,12 +79,6 @@ class OfficialImportService(
 
                 from = until.plusDays(1)
             }
-        } catch (error: Exception) {
-            store.failed(PriceSource.OFFICIAL, error)
-
-            log.warn("Data loading failed; saved data retained [source={}]", PriceSource.OFFICIAL, error)
-        } finally {
-            lock.unlock()
         }
     }
 

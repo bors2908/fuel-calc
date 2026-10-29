@@ -1,47 +1,37 @@
 package ge.becrin.fuelcalc.prices.service
 
-import ge.becrin.fuelcalc.archive.service.ArchiveReadService
 import ge.becrin.fuelcalc.prices.MissingPriceReason
 import ge.becrin.fuelcalc.prices.PriceSeriesStatus
-import ge.becrin.fuelcalc.prices.dto.FuelPriceQueryDto
-import ge.becrin.fuelcalc.prices.dto.PriceTrendDto
 import ge.becrin.fuelcalc.prices.dto.RegionPriceSeriesDto
-import ge.becrin.fuelcalc.prices.jpa.PriceQueryExecutor
+import ge.becrin.fuelcalc.prices.dto.TrendPointDto
+import ge.becrin.fuelcalc.prices.model.PriceSelection
+import ge.becrin.fuelcalc.prices.model.SourcePriceRows
+import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import org.springframework.stereotype.Service
 
 @Service
-class FuelPriceTrendService(
-    private val archive: ArchiveReadService,
+class FuelPriceTrendService {
+    fun build(
+        selection: PriceSelection,
+        rows: SourcePriceRows
+    ): List<RegionPriceSeriesDto> {
+        val dates = rows.dates
 
-    private val contexts: PriceReadContextFactory,
+        return selection.regions.map { region ->
+            val available = rows.byRegion[region.okatoCode].orEmpty().associateBy { it.period.referenceDate }
+            val points = dates.map { date ->
+                val row = available[date]
 
-    private val query: PriceQueryExecutor,
-
-    private val cells: PriceCellConverter
-) {
-    fun get(input: FuelPriceQueryDto): PriceTrendDto =
-        archive.read(input.dataVersion) { meta ->
-            val context = contexts.query(input, meta.serverDate)
-            val rows = query.range(context.selection)
-            val calendar = rows.map { it.period }.distinctBy { it.key }.sortedWith(compareBy({ it.referenceDate }, { it.key }))
-            val byRegion = rows.groupBy { it.region.okatoCode }
-            val data = context.selection.regions.map { region ->
-                val available = byRegion[region.okatoCode].orEmpty().associateBy { it.period.key }
-                val bounds = context.bounds[region.okatoCode]
-                val points = calendar.map { period ->
-                    available[period.key]?.let { cells.available(it) }
-                        ?: cells.missing(MissingPriceReason.NO_OBSERVATION_FOR_PERIOD, period)
-                }
-                val status =
-                    when {
-                        available.isEmpty() -> PriceSeriesStatus.NO_DATA
-                        available.size == calendar.size -> PriceSeriesStatus.AVAILABLE
-                        else -> PriceSeriesStatus.PARTIAL
-                    }
-
-                RegionPriceSeriesDto(region, status, bounds?.first, bounds?.last, points)
+                TrendPointDto(date, row?.price?.toPlainString(), row?.id?.toString(),
+                    if (row == null) MissingPriceReason.NO_OBSERVATION_FOR_PERIOD else null)
+            }
+            val status = when {
+                available.isEmpty() -> PriceSeriesStatus.NO_DATA
+                available.size == dates.size -> PriceSeriesStatus.AVAILABLE
+                else -> PriceSeriesStatus.PARTIAL
             }
 
-            PriceTrendDto(meta, context.dto, data, context.updates)
+            RegionPriceSeriesDto(RegionRefDto(region), status, points)
         }
+    }
 }

@@ -61,8 +61,7 @@ class RestErrorHandler(private val context: ApiRequestContext) {
                 failure.message.orEmpty(),
                 info.generatedAt,
                 info.requestId,
-                failure.details,
-                failure.currentDataVersion
+                failure.details
             )
         )
     }

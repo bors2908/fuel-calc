@@ -1,67 +1,30 @@
-import { useCallback, useState } from "react";
-import { api, errorMessage } from "../api/client";
-import type { Schema, Selection } from "../api/types";
-import { checkContext } from "../prices/load";
-import { useRequestGate } from "../ui/useRequestGate";
+import { api } from "../api/client";
+import type { Schema } from "../api/types";
+import type { RefuelingSelection } from "../selection/types";
+import { checkContext } from "../selection/context";
+import { useAsyncRequest } from "../ui/useAsyncRequest";
+import { sources } from "../sources/model";
 
 export function useRefueling() {
-  const [result, setResult] = useState<Schema<"RefuelingCalculation"> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const { begin, cancel } = useRequestGate();
-  const invalidate = useCallback(() => {
-    cancel();
-    setResult(null);
-    setError(null);
-    setBusy(false);
-  }, [cancel]);
-  async function calculate(selection: Selection, volume: string) {
-    const task = begin();
-    setBusy(true);
-    setResult(null);
-    setError(null);
-    try {
-      const value = await api.calculate(
-        {
-          selection: {
-            baseRegionCode: selection.baseRegionCode,
-            regionCodes: selection.regionCodes,
-            fuelType: selection.fuelType,
-            date: selection.dateTo,
-          },
-          volumeLiters: volume,
-        },
-        task.signal,
-      );
+  const {
+    value: result,
+    busy,
+    error,
+    run,
+    clear,
+  } = useAsyncRequest<Schema<"RefuelingCalculation">>({ keepPrevious: false });
+  async function calculate(selection: RefuelingSelection, volume: string) {
+    await run(async (signal) => {
+      const value = await api.calculate({ selection, volumeLiters: volume }, signal);
       if (
-        value.results.length !== 2 ||
-        value.results[0]?.context.source !== "OFFICIAL" ||
-        value.results[1]?.context.source !== "MARKET"
+        value.results.length !== sources.length ||
+        !sources.every((source, index) => value.results[index]?.source === source)
       ) {
         throw new Error("Invalid calculation sources");
       }
-      for (const item of value.results) {
-        checkContext(
-          {
-            ...selection,
-            source: item.context.source,
-            frequency: item.context.source === "OFFICIAL" ? "WEEKLY" : "DAILY",
-          },
-          { context: item.context, meta: value.meta },
-        );
-      }
-      if (task.isCurrent()) {
-        setResult(value);
-      }
-    } catch (failure) {
-      if (task.isCurrent()) {
-        setError(errorMessage(failure));
-      }
-    } finally {
-      if (task.isCurrent()) {
-        setBusy(false);
-      }
-    }
+      checkContext(selection, value.context);
+      return value;
+    });
   }
-  return { result, error, busy, invalidate, calculate };
+  return { result, busy, error, calculate, invalidate: clear };
 }

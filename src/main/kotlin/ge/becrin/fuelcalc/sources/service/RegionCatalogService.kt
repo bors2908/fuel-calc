@@ -1,11 +1,12 @@
 package ge.becrin.fuelcalc.sources.service
 
 import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.jpa.ImportStore
-import org.slf4j.LoggerFactory
-import org.springframework.stereotype.Service
+import ge.becrin.fuelcalc.sources.jpa.RegionImportStore
+import ge.becrin.fuelcalc.sources.rosstat.RosstatRegionParser
 import java.net.URI
 import java.util.concurrent.locks.ReentrantLock
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
 
 @Service
 class RegionCatalogService(
@@ -13,9 +14,11 @@ class RegionCatalogService(
 
     private val properties: ImportProperties,
 
-    private val store: ImportStore,
+    private val store: RegionImportStore,
 
-    private val catalog: RegionCatalog
+    private val catalog: RegionCatalog,
+
+    private val parser: RosstatRegionParser
 ) {
     private val lock = ReentrantLock()
 
@@ -33,35 +36,23 @@ class RegionCatalogService(
         }
 
         try {
-            http.beginRun()
+            http.run {
+                val full = http.json(URI.create(properties.regions.okatoEndpoint))
+                val selection = http.json(URI.create(properties.regions.selectionEndpoint))
 
-            val full = http.json(URI.create(properties.regions.okatoEndpoint))
-            val selection = http.json(URI.create(properties.regions.selectionEndpoint))
+                val selected = parser.parse(full, selection)
 
-            require(full.isArray && selection.isArray && !selection.isEmpty) { "Invalid OKATO catalog or selection" }
+                val hash = ImportHash.hash(selected.flatMap { listOf(it.okatoCode, it.name) })
+                val changed = store.synchronizeRegions(selected, hash)
 
-            val byId = full.associateBy { it.path("id").asLong() }
-            val ids = selection.toList().map { it.path("-298").asLong() }
+                restore()
 
-            require(byId.size == full.size() && ids.distinct().size == ids.size && ids.all { it in byId }) {
-                "Invalid or unresolved OKATO selection references"
+                log.info("Region catalog checked [changed={}, territories={}]", changed, selected.size)
             }
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
 
-            val selected = ids.map { id ->
-                val row = byId.getValue(id)
-
-                RegionCatalog.Region(row.path("-17006").asString(""), row.path("-17007").asString(""))
-            }.sortedBy { it.okatoCode }
-
-            require(selected.all { it.okatoCode.isNotBlank() && it.name.isNotBlank() }) { "Invalid selected territory" }
-            require(selected.map { it.okatoCode }.distinct().size == selected.size) { "Duplicate selected OKATO code" }
-
-            val hash = ImportHash.hash(selected.flatMap { listOf(it.okatoCode, it.name) })
-            val changed = store.synchronizeRegions(selected, hash)
-
-            restore()
-
-            log.info("Region catalog checked [changed={}, territories={}]", changed, selected.size)
+            throw error
         } catch (error: Exception) {
             log.warn("Region catalog unavailable; saved catalog retained", error)
         } finally {

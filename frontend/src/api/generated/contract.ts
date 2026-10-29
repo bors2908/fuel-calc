@@ -28,69 +28,9 @@ export interface paths {
         };
         /**
          * List fuel types
-         * @description Возвращает enum топлива, название и rosstatCode из справочника товаров Витрины.
+         * @description Возвращает код enum и название поддерживаемого топлива. Коды внешних справочников остаются внутри импорта.
          */
         get: operations["listFuelTypes"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/fuel-prices/overview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get price overview
-         * @description Возвращает сводку основного региона и минимум среди выбранных по общему срезу. При отсутствии истории отвечает 200 с явными null и статусами.
-         */
-        get: operations["getFuelPriceOverview"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/fuel-prices/trend": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get regional price trends
-         * @description Возвращает все наблюдения интервала для всех выбранных регионов одним пакетом. Нет запросов по одному региону или точке. История и подписи достаточны для графика, таблицы и подсказок. sourceUpdates передаёт состояния потоков один раз на ответ; source.updateKey каждой цены ссылается на запись этой карты. Явные пропуски относятся к общему календарю канонического набора, а не к выдуманным дням. Пагинации и скрытого усечения нет.
-         */
-        get: operations["getFuelPriceTrend"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/fuel-prices/comparison": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Compare regional prices
-         * @description Возвращает последний общий период всех выбранных регионов и полные строки. Если общего периода нет, показывает последние индивидуальные цены без разниц и рейтинга. Повторный запрос сортировки не требует данных предыдущего ответа.
-         */
-        get: operations["getFuelPriceComparison"];
         put?: never;
         post?: never;
         delete?: never;
@@ -130,9 +70,29 @@ export interface paths {
         put?: never;
         /**
          * Calculate refueling costs
-         * @description Один запрос возвращает два независимых расчёта: OFFICIAL/WEEKLY первым, MARKET/DAILY вторым. Для каждого источника выбирается своя последняя общая дата регионов не позднее selection.date, по всей сохранённой истории. В context обе границы dateFrom/dateTo равны запрошенной дате; фактическая дата цены находится в comparison.period. При отсутствии данных соответствующий результат имеет статус NO_DATA или NO_COMMON_PERIOD и null вместо суммы и сравнения. Ответ 200 также при отсутствии обоих рядов. expectedSnapshotIds сравниваются отдельно по источникам. Все результаты читаются из одной ревизии архива; ничего не сохраняется.
+         * @description Рассчитывает стоимость объёма по OFFICIAL и MARKET в одной транзакции чтения. Вход: регионы, топливо, дата и объём. Для каждого источника используется последняя общая дата не позже запрошенной. Отсутствующий источник не блокирует второй результат.
          */
         post: operations["calculateRefueling"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fuel-prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get both price sources
+         * @description Сводка, история и сравнение OFFICIAL и MARKET в одном согласованном чтении. Контекст и состояния источников возвращаются один раз. Отсутствие наблюдений одного источника не скрывает другой.
+         */
+        get: operations["getFuelPricePage"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -145,10 +105,8 @@ export interface components {
     schemas: {
         /** @enum {string} */
         SortOrder: "ASC" | "DESC";
-        /** @description Непрозрачная ревизия опубликованного набора данных и справочников. */
+        /** @description Информационная ревизия архива на момент согласованного чтения. */
         DataVersion: string;
-        /** @description Детерминированный идентификатор выбранного среза; не ID серверной сессии. */
-        SnapshotId: string;
         /**
          * @description Неотрицательное десятичное значение без потери исходной точности.
          * @example 72.50
@@ -200,8 +158,6 @@ export interface components {
         FuelTypeRef: {
             code: components["schemas"]["FuelType"];
             name: string;
-            /** @enum {string} */
-            rosstatCode: "7804" | "7802" | "7803";
         };
         /** @description Полный список субъектов РФ по названию, затем по коду; поиск по названию выполняется в UI. */
         RegionList: {
@@ -242,52 +198,14 @@ export interface components {
          * @enum {string}
          */
         Frequency: "DAILY" | "WEEKLY";
-        /**
-         * @description Региональная средняя цена: официальная статистика Росстата/rustata либо среднее замеров регионального индекса BenzUp. Методика и покрытие передаются в source.
-         * @enum {string}
-         */
-        PriceBasis: "REGIONAL_CONSUMER_AVERAGE";
         /** @enum {string} */
         ComparisonSortBy: "PRICE" | "REGION_NAME";
-        /** @description Выбор регионов, топлива, диапазона дат и источника. Обе даты включительны; dateFrom <= dateTo <= serverDate. */
-        PriceSelection: {
-            baseRegionCode: components["schemas"]["RegionCode"];
-            regionCodes: components["schemas"]["RegionCode"][];
-            fuelType: components["schemas"]["FuelType"];
-            /** Format: date */
-            dateFrom: string;
-            /** Format: date */
-            dateTo: string;
-            frequency: components["schemas"]["Frequency"];
-            source: components["schemas"]["PriceSource"];
-        };
-        /** @description Нормализованный выбор. key зависит от параметров выбора; dataVersion отражает изменения архива. */
-        PriceContext: {
-            key: string;
-            baseRegion: components["schemas"]["RegionRef"];
-            regions: components["schemas"]["RegionRef"][];
-            fuelType: components["schemas"]["FuelTypeRef"];
-            /** Format: date */
-            dateFrom: string;
-            /** Format: date */
-            dateTo: string;
-            frequency: components["schemas"]["Frequency"];
-            source: components["schemas"]["PriceSource"];
-            basis: components["schemas"]["PriceBasis"];
-            /** @enum {string} */
-            unit: "RUB/L";
-        };
         /** @description Единый период региональных наблюдений всех трёх каналов. Фильтрация идёт по referenceDate. Границы недельного периода неизвестного охвата равны null. */
         PricePeriod: {
             key: string;
             frequency: components["schemas"]["Frequency"];
             /** Format: date */
             referenceDate: string;
-            label: string;
-            /** Format: date */
-            startDate: string | null;
-            /** Format: date */
-            endDate: string | null;
         };
         /** @enum {string} */
         MissingPriceReason: "NO_DATA_IN_RANGE" | "NO_OBSERVATION_FOR_PERIOD";
@@ -318,8 +236,6 @@ export interface components {
          *     }
          */
         PriceCell: components["schemas"]["AvailablePriceCell"] | components["schemas"]["MissingPriceCell"];
-        /** @description Точка календаря ряда; period присутствует также при отсутствии наблюдения. */
-        PriceSeriesPoint: components["schemas"]["PriceCell"] & Record<string, unknown>;
         /** @description Изменение от startPrice до latestPrice той же сводки. Конечная цена отдельно не дублируется. При одной/нуле точек разницы null; при двух и нулевой начальной цене абсолютная разница задана, percent=null. */
         PriceChange: {
             /** @enum {string} */
@@ -333,42 +249,25 @@ export interface components {
         /** @description Данные карточки минимальной цены за общий срез. lowestDifferenceRubPerLiter = минимум минус цена основного региона. Для SINGLE_REGION нет минимума или разницы; UI предлагает добавить регионы. */
         ComparisonSummary: {
             status: components["schemas"]["ComparisonStatus"];
-            snapshotId: string | null;
             period?: components["schemas"]["PricePeriod"];
-            basePriceRubPerLiter: components["schemas"]["NullableDecimalString"];
             lowestPriceRubPerLiter: components["schemas"]["NullableDecimalString"];
             lowestRegions: components["schemas"]["RegionRef"][];
-            lowestDifferenceRubPerLiter: components["schemas"]["NullableSignedDecimalString"];
             hasNewerObservations: boolean;
         };
         /** @description Самодостаточная сводка; latestPrice и change относятся к основному региону, comparison — к общему периоду выбранных регионов. */
         PriceOverview: {
-            meta: components["schemas"]["ApiMeta"];
-            context: components["schemas"]["PriceContext"];
             latestPrice: components["schemas"]["PriceCell"];
             /** Format: date */
             latestAvailableDate: string | null;
             change: components["schemas"]["PriceChange"];
             comparison: components["schemas"]["ComparisonSummary"];
-            sourceUpdates: components["schemas"]["SourceUpdates"];
         };
         /** @description Все точки выбранного интервала по общему календарю периодов. Границы available относятся ко всему архиву этого ряда. */
         RegionPriceSeries: {
             region: components["schemas"]["RegionRef"];
             /** @enum {string} */
             status: "AVAILABLE" | "PARTIAL" | "NO_DATA";
-            /** Format: date */
-            firstAvailableDate: string | null;
-            /** Format: date */
-            lastAvailableDate: string | null;
-            points: components["schemas"]["PriceSeriesPoint"][];
-        };
-        /** @description Один ответ для графика и таблицы всех выбранных регионов. Регионы без истории сохраняются; точки упорядочены по referenceDate, затем по ключу периода. */
-        PriceTrend: {
-            meta: components["schemas"]["ApiMeta"];
-            context: components["schemas"]["PriceContext"];
-            data: components["schemas"]["RegionPriceSeries"][];
-            sourceUpdates: components["schemas"]["SourceUpdates"];
+            points: components["schemas"]["TrendPoint"][];
         };
         /** @description При сопоставимости price относится к общему периоду; иначе к последнему индивидуальному наблюдению внутри диапазона, разница null и обе метки false. У основного региона разница null. */
         ComparisonRow: {
@@ -379,12 +278,10 @@ export interface components {
             latestAvailableDate: string | null;
             differenceRubPerLiter: components["schemas"]["NullableSignedDecimalString"];
             isLowest: boolean;
-            isHighest: boolean;
         };
-        /** @description AVAILABLE: последний общий период всех регионов. SINGLE_REGION: последняя цена единственного региона; без меток минимума/максимума. При NO_COMMON_PERIOD/NO_DATA snapshotId=null, period опущен, allPricesEqual=null; сортировка PRICE заменяется REGION_NAME ASC. Если все сопоставимые цены равны, allPricesEqual=true и метки минимума/максимума false у всех. */
+        /** @description Ответ содержит актуальные данные одного согласованного чтения. */
         ComparisonInfo: {
             status: components["schemas"]["ComparisonStatus"];
-            snapshotId: string | null;
             period?: components["schemas"]["PricePeriod"];
             sortBy: components["schemas"]["ComparisonSortBy"];
             sortOrder: components["schemas"]["SortOrder"];
@@ -395,20 +292,10 @@ export interface components {
         Comparison: components["schemas"]["ComparisonInfo"] & {
             data: components["schemas"]["ComparisonRow"][];
         };
-        /** @description Самодостаточное сравнение с ценами, датами и названиями; исходные значения не нужно собирать из других ответов. */
-        PriceComparison: {
-            meta: components["schemas"]["ApiMeta"];
-            context: components["schemas"]["PriceContext"];
-            comparison: components["schemas"]["Comparison"];
-            sourceUpdates: components["schemas"]["SourceUpdates"];
-        };
         /** @description Цена и фактический поставщик: ROSSTAT, RUSTATA или BENZUP. publicationDate — дата публикации, если поставщик её сообщает; loadedAt — время загрузки. */
         PriceObservation: {
             region: components["schemas"]["RegionRef"];
             fuelType: components["schemas"]["FuelTypeRef"];
-            basis: components["schemas"]["PriceBasis"];
-            /** @enum {string} */
-            unit: "RUB/L";
             price: components["schemas"]["AvailablePriceCell"];
             /** Format: date */
             latestAvailableDate: string | null;
@@ -449,20 +336,11 @@ export interface components {
         RefuelingCalculateRequest: {
             selection: components["schemas"]["RefuelingSelection"];
             volumeLiters: components["schemas"]["VolumeLiters"];
-            expectedSnapshotIds?: {
-                OFFICIAL?: components["schemas"]["SnapshotId"];
-                MARKET?: components["schemas"]["SnapshotId"];
-            };
         };
         /** @description Единая строка сравнения и стоимости. totalRub=HALF_UP(volume × точная цена, 2); differenceRub=округлённый итог минус округлённый итог основного региона. Для базового differenceRub=0.00, differenceRubPerLiter=null и relation=BASE. Другие метки и разница цены имеют тот же смысл, что в ComparisonRow. */
         RefuelingRow: {
             region: components["schemas"]["RegionRef"];
             price: components["schemas"]["AvailablePriceCell"];
-            /** Format: date */
-            latestAvailableDate: string | null;
-            differenceRubPerLiter: components["schemas"]["NullableSignedDecimalString"];
-            isLowest: boolean;
-            isHighest: boolean;
             totalRub: components["schemas"]["Money"];
             differenceRub: components["schemas"]["SignedMoney"];
             /** @enum {string} */
@@ -472,13 +350,13 @@ export interface components {
         RefuelingComparison: components["schemas"]["ComparisonInfo"] & {
             data: components["schemas"]["RefuelingRow"][];
         };
-        /** @description Независимый расчёт одного источника. AVAILABLE/SINGLE_REGION содержит сумму и сравнение; NO_DATA/NO_COMMON_PERIOD — null. snapshotChanged=null без ожидаемого ID, иначе сравнение с текущим срезом, в том числе исчезнувшим. */
+        /** @description Независимый результат одного источника. При отсутствии сопоставимых наблюдений baseTotalRub и comparison равны null. */
         RefuelingSourceCalculation: {
-            context: components["schemas"]["PriceContext"];
             status: components["schemas"]["ComparisonStatus"];
             baseTotalRub: string | null;
-            snapshotChanged: boolean | null;
             comparison: (components["schemas"]["RefuelingComparison"] | (never | null)) | null;
+            source: components["schemas"]["PriceSource"];
+            frequency: components["schemas"]["Frequency"];
         };
         /** @description Два расчёта из одной ревизии архива. results всегда содержит OFFICIAL первым и MARKET вторым; даты и доступность независимы. */
         RefuelingCalculation: {
@@ -488,6 +366,7 @@ export interface components {
             currency: "RUB";
             results: components["schemas"]["RefuelingSourceCalculation"][];
             sourceUpdates: components["schemas"]["SourceUpdates"];
+            context: components["schemas"]["PricePageContext"];
         };
         /** @description Ошибка поля или смысловая причина отказа. field=null для ошибки всего запроса. */
         ErrorDetail: {
@@ -513,13 +392,47 @@ export interface components {
          */
         ErrorResponse: {
             /** @enum {string} */
-            type: "InvalidInput" | "ResourceNotFound" | "DataVersionChanged" | "InternalError" | "ServiceUnavailable";
+            type: "InvalidInput" | "ResourceNotFound" | "InternalError" | "ServiceUnavailable";
             message: string;
             /** Format: date-time */
             timestamp: string;
             requestId: string;
             details: components["schemas"]["ErrorDetail"][];
-            currentDataVersion?: components["schemas"]["DataVersion"];
+        };
+        /** @description Точная дата сохранённого наблюдения. Отсутствующая цена не заменяется нулём. */
+        TrendPoint: {
+            /** Format: date */
+            date: string;
+            priceRubPerLiter: components["schemas"]["NullableDecimalString"];
+            observationId: string | null;
+            /** @enum {string|null} */
+            missingReason: "NO_DATA_IN_RANGE" | "NO_OBSERVATION_FOR_PERIOD" | null;
+        };
+        /** @description Общий выбор регионов, топлива и дат для обоих источников. */
+        PricePageContext: {
+            baseRegion: components["schemas"]["RegionRef"];
+            regions: components["schemas"]["RegionRef"][];
+            fuelType: components["schemas"]["FuelTypeRef"];
+            /** Format: date */
+            dateFrom: string;
+            /** Format: date */
+            dateTo: string;
+        };
+        PriceSourcePage: {
+            frequency: components["schemas"]["Frequency"];
+            overview: components["schemas"]["PriceOverview"];
+            trend: components["schemas"]["RegionPriceSeries"][];
+            comparison: components["schemas"]["Comparison"];
+        };
+        PricePage: {
+            meta: components["schemas"]["ApiMeta"];
+            context: components["schemas"]["PricePageContext"];
+            sources: {
+                OFFICIAL: components["schemas"]["PriceSourcePage"];
+                MARKET: components["schemas"]["PriceSourcePage"];
+            };
+            sourceUpdates: components["schemas"]["SourceUpdates"];
+            comparisonOrder: components["schemas"]["PriceSource"];
         };
     };
     responses: {
@@ -535,16 +448,6 @@ export interface components {
         };
         /** @description Наблюдение с таким observationId не найдено. */
         ResourceNotFound: {
-            headers: {
-                "Cache-Control": components["headers"]["NoStore"];
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["ErrorResponse"];
-            };
-        };
-        /** @description dataVersion уже не соответствует опубликованной ревизии. Передана currentDataVersion. */
-        DataVersionChanged: {
             headers: {
                 "Cache-Control": components["headers"]["NoStore"];
                 [name: string]: unknown;
@@ -589,8 +492,6 @@ export interface components {
         Frequency: components["schemas"]["Frequency"];
         /** @description Источник цен. OFFICIAL поддерживает WEEKLY; MARKET поддерживает DAILY. Внешние API при чтении не вызываются. */
         Source: components["schemas"]["PriceSource"];
-        /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
-        DataVersion: components["schemas"]["DataVersion"];
     };
     requestBodies: never;
     headers: {
@@ -651,142 +552,12 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
-    getFuelPriceOverview: {
-        parameters: {
-            query: {
-                /** @description Точный data[].okatoCode из GET /api/v1/regions для основного региона; входит в filterRegionCode. */
-                baseRegionCode: components["parameters"]["BaseRegionCode"];
-                /** @description От 1 до 4 точных data[].okatoCode из GET /api/v1/regions, включая основной. Один CSV-параметр с разделителем-запятой, без пробелов, кавычек и JSON-скобок. Повтор ключа, пустой список, пустые элементы и дубликаты недопустимы. */
-                filterRegionCode: components["parameters"]["FilterRegionCode"];
-                /** @description Источник цен. OFFICIAL поддерживает WEEKLY; MARKET поддерживает DAILY. Внешние API при чтении не вызываются. */
-                source: components["parameters"]["Source"];
-                /** @description Один вид топлива. */
-                filterFuelType: components["parameters"]["FilterFuelType"];
-                /** @description Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo. */
-                filterDateFrom: components["parameters"]["FilterDateFrom"];
-                /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
-                filterDateTo: components["parameters"]["FilterDateTo"];
-                /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
-                frequency: components["parameters"]["Frequency"];
-                /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
-                dataVersion?: components["parameters"]["DataVersion"];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    "Cache-Control": components["headers"]["NoStore"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PriceOverview"];
-                };
-            };
-            400: components["responses"]["InvalidInput"];
-            409: components["responses"]["DataVersionChanged"];
-            500: components["responses"]["InternalError"];
-            503: components["responses"]["ServiceUnavailable"];
-        };
-    };
-    getFuelPriceTrend: {
-        parameters: {
-            query: {
-                /** @description Точный data[].okatoCode из GET /api/v1/regions для основного региона; входит в filterRegionCode. */
-                baseRegionCode: components["parameters"]["BaseRegionCode"];
-                /** @description От 1 до 4 точных data[].okatoCode из GET /api/v1/regions, включая основной. Один CSV-параметр с разделителем-запятой, без пробелов, кавычек и JSON-скобок. Повтор ключа, пустой список, пустые элементы и дубликаты недопустимы. */
-                filterRegionCode: components["parameters"]["FilterRegionCode"];
-                /** @description Источник цен. OFFICIAL поддерживает WEEKLY; MARKET поддерживает DAILY. Внешние API при чтении не вызываются. */
-                source: components["parameters"]["Source"];
-                /** @description Один вид топлива. */
-                filterFuelType: components["parameters"]["FilterFuelType"];
-                /** @description Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo. */
-                filterDateFrom: components["parameters"]["FilterDateFrom"];
-                /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
-                filterDateTo: components["parameters"]["FilterDateTo"];
-                /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
-                frequency: components["parameters"]["Frequency"];
-                /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
-                dataVersion?: components["parameters"]["DataVersion"];
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    "Cache-Control": components["headers"]["NoStore"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PriceTrend"];
-                };
-            };
-            400: components["responses"]["InvalidInput"];
-            409: components["responses"]["DataVersionChanged"];
-            500: components["responses"]["InternalError"];
-            503: components["responses"]["ServiceUnavailable"];
-        };
-    };
-    getFuelPriceComparison: {
-        parameters: {
-            query: {
-                /** @description Точный data[].okatoCode из GET /api/v1/regions для основного региона; входит в filterRegionCode. */
-                baseRegionCode: components["parameters"]["BaseRegionCode"];
-                /** @description От 1 до 4 точных data[].okatoCode из GET /api/v1/regions, включая основной. Один CSV-параметр с разделителем-запятой, без пробелов, кавычек и JSON-скобок. Повтор ключа, пустой список, пустые элементы и дубликаты недопустимы. */
-                filterRegionCode: components["parameters"]["FilterRegionCode"];
-                /** @description Источник цен. OFFICIAL поддерживает WEEKLY; MARKET поддерживает DAILY. Внешние API при чтении не вызываются. */
-                source: components["parameters"]["Source"];
-                /** @description Один вид топлива. */
-                filterFuelType: components["parameters"]["FilterFuelType"];
-                /** @description Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo. */
-                filterDateFrom: components["parameters"]["FilterDateFrom"];
-                /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
-                filterDateTo: components["parameters"]["FilterDateTo"];
-                /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
-                frequency: components["parameters"]["Frequency"];
-                /** @description Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается. */
-                dataVersion?: components["parameters"]["DataVersion"];
-                /** @description Поле сортировки; фактически применённое поле возвращается в ответе. */
-                sortBy?: "PRICE" | "REGION_NAME";
-                /** @description Направление основного поля. При равенстве — название ASC, затем код ASC. */
-                sortOrder?: "ASC" | "DESC";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful response */
-            200: {
-                headers: {
-                    "Cache-Control": components["headers"]["NoStore"];
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PriceComparison"];
-                };
-            };
-            400: components["responses"]["InvalidInput"];
-            409: components["responses"]["DataVersionChanged"];
-            500: components["responses"]["InternalError"];
-            503: components["responses"]["ServiceUnavailable"];
-        };
-    };
     getFuelPriceObservation: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Значение observationId доступной цены из overview, trend или comparison. Непрозрачный ID неизменяемого наблюдения; сгенерированное клиентом значение string не является существующим ID и даст 404. */
+                /** @description ID доступной цены из ответа страницы или расчёта. */
                 observationId: string;
             };
             cookie?: never;
@@ -831,6 +602,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RefuelingCalculation"];
+                };
+            };
+            400: components["responses"]["InvalidInput"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getFuelPricePage: {
+        parameters: {
+            query: {
+                /** @description Точный data[].okatoCode из GET /api/v1/regions для основного региона; входит в filterRegionCode. */
+                baseRegionCode: components["parameters"]["BaseRegionCode"];
+                /** @description От 1 до 4 точных data[].okatoCode из GET /api/v1/regions, включая основной. Один CSV-параметр с разделителем-запятой, без пробелов, кавычек и JSON-скобок. Повтор ключа, пустой список, пустые элементы и дубликаты недопустимы. */
+                filterRegionCode: components["parameters"]["FilterRegionCode"];
+                /** @description Один вид топлива. */
+                filterFuelType: components["parameters"]["FilterFuelType"];
+                /** @description Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo. */
+                filterDateFrom: components["parameters"]["FilterDateFrom"];
+                /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
+                filterDateTo: components["parameters"]["FilterDateTo"];
+                /** @description Источник, по которому упорядочиваются регионы; по умолчанию OFFICIAL. */
+                sortSource?: components["schemas"]["PriceSource"];
+                sortBy?: components["schemas"]["ComparisonSortBy"];
+                sortOrder?: components["schemas"]["SortOrder"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PricePage"];
                 };
             };
             400: components["responses"]["InvalidInput"];

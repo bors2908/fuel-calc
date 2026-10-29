@@ -1,21 +1,26 @@
 package ge.becrin.fuelcalc.api
 
 import ge.becrin.fuelcalc.fuels.FuelType
+import ge.becrin.fuelcalc.regions.model.Region
 import ge.becrin.fuelcalc.sources.SourceProvider
-import ge.becrin.fuelcalc.sources.jpa.ImportStore
+import ge.becrin.fuelcalc.sources.jpa.PriceImportStore
+import ge.becrin.fuelcalc.sources.jpa.RegionImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import ge.becrin.fuelcalc.sources.model.FetchedPrice
-import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import java.time.LocalDate
 
-class ArchiveFixture(private val store: ImportStore) {
+class ArchiveFixture(
+    private val store: PriceImportStore,
+
+    private val regionStore: RegionImportStore
+) {
     fun regions() {
-        store.synchronizeRegions(
+        regionStore.synchronizeRegions(
             listOf(
-                RegionCatalog.Region("A", "Регион А"),
-                RegionCatalog.Region("B", "Регион Б"),
-                RegionCatalog.Region("C", "Регион В"),
-                RegionCatalog.Region("D", "Регион Г")
+                Region("A", "Регион А"),
+                Region("B", "Регион Б"),
+                Region("C", "Регион В"),
+                Region("D", "Регион Г")
             ),
             "test-regions-v1"
         )

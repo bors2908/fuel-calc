@@ -1,51 +1,26 @@
 package ge.becrin.fuelcalc.api
 
+import ge.becrin.fuelcalc.api.SortOrder
 import ge.becrin.fuelcalc.fuels.FuelType
-import ge.becrin.fuelcalc.fuels.dto.FuelTypeRefDto
+import ge.becrin.fuelcalc.prices.ComparisonSortBy
+import ge.becrin.fuelcalc.prices.ComparisonStatus
 import ge.becrin.fuelcalc.prices.PriceFrequency
-import ge.becrin.fuelcalc.prices.dto.PricePeriodDto
+import ge.becrin.fuelcalc.prices.model.ComparisonSnapshot
+import ge.becrin.fuelcalc.prices.model.PricePeriod
 import ge.becrin.fuelcalc.prices.model.PriceRow
 import ge.becrin.fuelcalc.prices.model.PriceSelection
-import ge.becrin.fuelcalc.prices.service.PriceIdentityFactory
+import ge.becrin.fuelcalc.prices.service.ComparisonAnalyzer
 import ge.becrin.fuelcalc.refueling.service.RefuelingCalculator
-import ge.becrin.fuelcalc.regions.dto.RegionRefDto
+import ge.becrin.fuelcalc.regions.model.Region
 import ge.becrin.fuelcalc.sources.PriceSource
-import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import org.junit.jupiter.api.Test
 
 class PriceDomainTest {
-    private val identity = PriceIdentityFactory()
-
-    private val first = RegionRefDto("A", "Регион А")
-
-    private val second = RegionRefDto("B", "Регион Б")
-
-    private val date = LocalDate.of(2026, 10, 19)
-
-    private val selection = PriceSelection(
-        first,
-        listOf(first, second),
-        FuelTypeRefDto(FuelType.DIESEL, "Дизель"),
-        date.minusMonths(1),
-        date,
-        PriceFrequency.WEEKLY,
-        PriceSource.OFFICIAL
-    )
-
-    @Test
-    fun testIdentitiesDependOnCanonicalSelectionAndImmutableObservationIds() {
-        val rows = listOf(row(1, first), row(2, second))
-        val reordered = selection.copy(regions = listOf(second, first))
-
-        assertEquals(identity.context(selection).key, identity.context(reordered).key)
-        assertEquals(identity.snapshot(selection, rows), identity.snapshot(reordered, rows.reversed()))
-        assertNotEquals(identity.context(selection).key, identity.context(selection.copy(base = second)).key)
-        assertNotEquals(identity.snapshot(selection, rows), identity.snapshot(selection.copy(source = PriceSource.MARKET), rows))
-        assertNotEquals(identity.snapshot(selection, rows), identity.snapshot(selection, listOf(rows.first().copy(id = 3), rows.last())))
-    }
-
     @Test
     fun testCalculatorUsesExactDecimalsAndHalfUpForFarmVolumes() {
         val calculator = RefuelingCalculator()
@@ -75,17 +50,52 @@ class PriceDomainTest {
         )
     }
 
-    private fun row(
-        id: Long,
-        region: RegionRefDto
-    ): PriceRow {
-        return PriceRow(
-            id,
-            region,
-            selection.fuel,
-            PricePeriodDto("WEEKLY:$date", PriceFrequency.WEEKLY, date, date.toString(), date.minusDays(6), date),
-            "72.50".toBigDecimal(),
-            PriceSource.OFFICIAL
+
+    @Test
+    fun testComparisonKeepsStableTieOrderAndSharesMinimumAndDifferenceRules() {
+        val date = LocalDate.of(2026, 10, 19)
+        val regions = listOf(Region("C", "Одинаковое имя"), Region("B", "Одинаковое имя"), Region("A", "Основной"))
+        val selection = PriceSelection(regions.last(), regions, FuelType.DIESEL, date, date)
+        val period = PricePeriod(PriceFrequency.WEEKLY, date)
+        val rows = regions.mapIndexed { index, region ->
+            PriceRow(index.toLong() + 1, region, FuelType.DIESEL, period,
+                (if (region.okatoCode == "A") "73.10" else "71.80").toBigDecimal(), PriceSource.OFFICIAL)
+        }
+        val snapshot = ComparisonSnapshot(selection, ComparisonStatus.AVAILABLE, rows, period, false)
+        val analysis = ComparisonAnalyzer().analyze(snapshot)
+
+        assertEquals(listOf("B", "C", "A"), analysis.rows.map { it.region.okatoCode })
+        assertEquals(listOf("B", "C"), analysis.lowestRegions.map { it.okatoCode })
+        assertEquals("71.80", analysis.minimum?.toPlainString())
+        assertEquals("-1.30", analysis.rows.first().difference?.toPlainString())
+        assertTrue(analysis.rows.take(2).all { it.isLowest })
+        assertEquals(false, analysis.allPricesEqual)
+
+        val descending = ComparisonAnalyzer().analyze(snapshot, sortOrder = SortOrder.DESC)
+
+        assertEquals(listOf("A", "B", "C"), descending.rows.map { it.region.okatoCode })
+    }
+
+    @Test
+    fun testComparisonWithoutCommonPeriodUsesNamesAndDoesNotComparePrices() {
+        val date = LocalDate.of(2026, 10, 19)
+        val base = Region("A", "Регион А")
+        val other = Region("B", "Регион Б")
+        val selection = PriceSelection(base, listOf(base, other), FuelType.DIESEL, date, date.plusDays(7))
+        val rows = listOf(
+            PriceRow(1, base, FuelType.DIESEL, PricePeriod(PriceFrequency.WEEKLY, date), "73.10".toBigDecimal(), PriceSource.OFFICIAL),
+            PriceRow(2, other, FuelType.DIESEL, PricePeriod(PriceFrequency.WEEKLY, date.plusDays(7)),
+                "71.80".toBigDecimal(), PriceSource.OFFICIAL)
         )
+        val snapshot = ComparisonSnapshot(selection, ComparisonStatus.NO_COMMON_PERIOD, rows, null, false)
+        val analysis = ComparisonAnalyzer().analyze(snapshot, sortOrder = SortOrder.DESC)
+
+        assertEquals(ComparisonSortBy.REGION_NAME, analysis.sortBy)
+        assertEquals(SortOrder.ASC, analysis.sortOrder)
+        assertEquals(listOf("A", "B"), analysis.rows.map { it.region.okatoCode })
+        assertNull(analysis.minimum)
+        assertNull(analysis.allPricesEqual)
+        assertTrue(analysis.rows.all { it.difference == null })
+        assertFalse(analysis.rows.any { it.isLowest })
     }
 }

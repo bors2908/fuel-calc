@@ -2,87 +2,91 @@ package ge.becrin.fuelcalc.prices.service
 
 import ge.becrin.fuelcalc.api.error.ApiException
 import ge.becrin.fuelcalc.fuels.FuelType
-import ge.becrin.fuelcalc.fuels.dto.FuelTypeRefDto
-import ge.becrin.fuelcalc.prices.dto.FuelPriceQueryDto
-import ge.becrin.fuelcalc.prices.dto.PriceSelectionDto
+import ge.becrin.fuelcalc.prices.dto.PricePageQueryDto
 import ge.becrin.fuelcalc.prices.model.PriceSelection
-import ge.becrin.fuelcalc.regions.dto.RegionRefDto
 import ge.becrin.fuelcalc.regions.jpa.RegionRepository
-import org.springframework.stereotype.Service
+import ge.becrin.fuelcalc.regions.model.Region
 import java.time.LocalDate
+import org.springframework.stereotype.Service
 
 @Service
-class PriceSelectionValidator(
-    private val regions: RegionRepository
-) {
+class PriceSelectionValidator(private val repository: RegionRepository) {
+    private data class Fields(
+        val base: String,
+
+        val regions: String,
+
+        val from: String,
+
+        val until: String
+    )
+
     fun resolve(
-        query: FuelPriceQueryDto,
+        query: PricePageQueryDto,
         serverDate: LocalDate
     ): PriceSelection =
         resolve(
-            PriceSelectionDto(
-                checkNotNull(query.baseRegionCode),
-                csv(checkNotNull(query.filterRegionCode), "filterRegionCode"),
-                checkNotNull(query.filterFuelType),
-                checkNotNull(query.filterDateFrom),
-                checkNotNull(query.filterDateTo),
-                checkNotNull(query.frequency),
-                checkNotNull(query.source)
-            ),
+            checkNotNull(query.baseRegionCode),
+            csv(checkNotNull(query.filterRegionCode), "filterRegionCode"),
+            checkNotNull(query.filterFuelType),
+            checkNotNull(query.filterDateFrom),
+            checkNotNull(query.filterDateTo),
             serverDate,
-            false
+            Fields("baseRegionCode", "filterRegionCode", "filterDateFrom", "filterDateTo")
         )
 
-    fun resolve(
-        input: PriceSelectionDto,
-        serverDate: LocalDate,
-        json: Boolean = true
-    ): PriceSelection {
-        val regionField = if (json) "selection.regionCodes" else "filterRegionCode"
-        val baseField = if (json) "selection.baseRegionCode" else "baseRegionCode"
-        val fromField = if (json) "selection.dateFrom" else "filterDateFrom"
-        val untilField = if (json) "selection.dateTo" else "filterDateTo"
-
-        if (!CODE.matches(input.baseRegionCode)) {
-            throw ApiException.invalid(baseField, "INVALID_FORMAT", "Неверный код основного региона")
-        }
-
-        if (input.baseRegionCode !in input.regionCodes) {
-            throw ApiException.invalid(baseField, "BASE_REGION_NOT_SELECTED", "Основной регион должен входить в выбор")
-        }
-
-        if (input.dateFrom > input.dateTo) {
-            throw ApiException.invalid(fromField, "INVALID_DATE_RANGE", "Начало периода позже окончания")
-        }
-
-        if (input.dateTo > serverDate) {
-            throw ApiException.invalid(untilField, "FUTURE_DATE", "Дата не должна быть в будущем")
-        }
-
-        if (input.frequency != input.source.frequency) {
-            throw ApiException.invalid("frequency", "SOURCE_FREQUENCY_MISMATCH", "OFFICIAL поддерживает недели, MARKET — дни")
-        }
-
-        val selected = regions(input.regionCodes, regionField)
-        val fuel = fuels().singleOrNull { it.code == input.fuelType }
-            ?: throw ApiException.invalid(if (json) "selection.fuelType" else "filterFuelType", "UNKNOWN_FUEL_TYPE", "Топливо не найдено")
-        val base = selected.single { it.okatoCode == input.baseRegionCode }
-
-        return PriceSelection(
-            base,
-            listOf(base) + selected.filter { it != base }.sortedBy { it.okatoCode },
+    fun resolveAsOf(
+        baseCode: String,
+        codes: List<String>,
+        fuel: FuelType,
+        date: LocalDate,
+        serverDate: LocalDate
+    ): PriceSelection =
+        resolve(
+            baseCode,
+            codes,
             fuel,
-            input.dateFrom,
-            input.dateTo,
-            input.frequency,
-            input.source
+            date,
+            date,
+            serverDate,
+            Fields("selection.baseRegionCode", "selection.regionCodes", "selection.date", "selection.date")
         )
+
+    private fun resolve(
+        baseCode: String,
+        codes: List<String>,
+        fuel: FuelType,
+        from: LocalDate,
+        until: LocalDate,
+        serverDate: LocalDate,
+        fields: Fields
+    ): PriceSelection {
+        if (!CODE.matches(baseCode)) {
+            throw ApiException.invalid(fields.base, "INVALID_FORMAT", "Неверный код основного региона")
+        }
+
+        if (baseCode !in codes) {
+            throw ApiException.invalid(fields.base, "BASE_REGION_NOT_SELECTED", "Основной регион должен входить в выбор")
+        }
+
+        if (from > until) {
+            throw ApiException.invalid(fields.from, "INVALID_DATE_RANGE", "Начало периода позже окончания")
+        }
+
+        if (until > serverDate) {
+            throw ApiException.invalid(fields.until, "FUTURE_DATE", "Дата не должна быть в будущем")
+        }
+
+        val selected = regions(codes, fields.regions)
+        val base = selected.single { it.okatoCode == baseCode }
+
+        return PriceSelection(base, listOf(base) + selected.filter { it != base }.sortedBy { it.okatoCode }, fuel, from, until)
     }
 
-    fun regions(
+    private fun regions(
         codes: List<String>,
         field: String
-    ): List<RegionRefDto> {
+    ): List<Region> {
         if (codes.size !in 1..4 || codes.any { !CODE.matches(it) }) {
             throw ApiException.invalid(field, "INVALID_FORMAT", "Выберите от одного до четырёх корректных кодов регионов")
         }
@@ -91,7 +95,7 @@ class PriceSelectionValidator(
             throw ApiException.invalid(field, "DUPLICATE_REGION", "Регионы не должны повторяться")
         }
 
-        val found = regions.findSelected(codes).map { RegionRefDto(it.okatoCode, it.name) }
+        val found = repository.findSelected(codes).map { Region(it.okatoCode, it.name) }
 
         if (found.size != codes.size) {
             throw ApiException.invalid(field, "UNKNOWN_REGION", "Неизвестный код региона")
@@ -100,10 +104,7 @@ class PriceSelectionValidator(
         return found
     }
 
-    fun fuels(): List<FuelTypeRefDto> =
-        FuelType.entries.map { FuelTypeRefDto(it) }
-
-    fun csv(
+    private fun csv(
         value: String,
         field: String
     ): List<String> {

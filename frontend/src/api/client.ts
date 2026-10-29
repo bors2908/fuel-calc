@@ -1,7 +1,9 @@
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import definitions from "./generated/schemas.json" with { type: "json" };
-import type { Schema, Selection, Sorting } from "./types";
+import type { Schema } from "./types";
+import type { PriceSelection } from "../selection/types";
+import type { PriceSorting } from "../prices/sorting";
 
 const validator = new Ajv({ strict: false });
 addFormats(validator);
@@ -36,9 +38,6 @@ export class ApiError extends Error {
 
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 409) {
-      return "Данные обновляются. Повторите загрузку.";
-    }
     if (error.status === 400) {
       return "Проверьте регионы, даты и объём. Выбор не принят сервисом.";
     }
@@ -73,34 +72,26 @@ async function request<Name extends keyof typeof definitions.definitions>(
   return decode(name, value);
 }
 
-export function selectionQuery(selection: Selection, version?: string): URLSearchParams {
+export function selectionQuery(selection: PriceSelection): URLSearchParams {
   const query = new URLSearchParams({
     baseRegionCode: selection.baseRegionCode,
     filterRegionCode: selection.regionCodes.join(","),
     filterFuelType: selection.fuelType,
     filterDateFrom: selection.dateFrom,
     filterDateTo: selection.dateTo,
-    frequency: selection.frequency,
-    source: selection.source,
   });
-  if (version) {
-    query.set("dataVersion", version);
-  }
   return query;
 }
 
 export const api = {
   regions: (signal: AbortSignal) => request("RegionList", "regions", signal),
   fuels: (signal: AbortSignal) => request("FuelTypeList", "fuel-types", signal),
-  overview: (selection: Selection, signal: AbortSignal, version?: string) =>
-    request("PriceOverview", `fuel-prices/overview?${selectionQuery(selection, version)}`, signal),
-  trend: (selection: Selection, signal: AbortSignal, version: string) =>
-    request("PriceTrend", `fuel-prices/trend?${selectionQuery(selection, version)}`, signal),
-  comparison: (selection: Selection, sorting: Sorting, signal: AbortSignal, version: string) => {
-    const query = selectionQuery(selection, version);
+  prices: (selection: PriceSelection, signal: AbortSignal, sorting: PriceSorting) => {
+    const query = selectionQuery(selection);
+    query.set("sortSource", sorting.source);
     query.set("sortBy", sorting.sortBy);
     query.set("sortOrder", sorting.sortOrder);
-    return request("PriceComparison", `fuel-prices/comparison?${query}`, signal);
+    return request("PricePage", `fuel-prices?${query}`, signal);
   },
   observation: (id: string, signal: AbortSignal) =>
     request(

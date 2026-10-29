@@ -8,8 +8,6 @@ import ge.becrin.fuelcalc.prices.ComparisonStatus
 data class ComparisonDto<T>(
     val status: ComparisonStatus,
 
-    val snapshotId: String?,
-
     @get:JsonInclude(JsonInclude.Include.NON_NULL)
     val period: PricePeriodDto? = null,
 

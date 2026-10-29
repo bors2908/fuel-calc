@@ -143,7 +143,7 @@
   overflow-wrap: anywhere;
 }
 
-.total-value > span {
+.total-value > small {
   font-size: 1.5rem;
 }
 
@@ -185,12 +185,6 @@
 .calculation-placeholder > p {
   max-inline-size: 25rem;
   color: var(--muted);
-}
-
-.snapshot-notice {
-  padding: 0.75rem;
-  background: var(--tint);
-  border-radius: 0.5rem;
 }
 
 @media (width <= 900px) {
@@ -247,4 +241,8 @@
 
 .empty-calculation {
   color: var(--muted);
+}
+
+.refueling-page .calculator {
+  margin-block: 2rem 4rem;
 }

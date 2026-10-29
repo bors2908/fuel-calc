@@ -6,7 +6,7 @@ info:
     REST API MVP сравнения цен и расчёта стоимости заправки. OFFICIAL — недельные данные Росстата с резервом rustata; MARKET — дневные индексы BenzUp.
 
     Коды регионов берутся из GET /api/v1/regions и передаются строками без преобразования. Массивы query передаются одним CSV-параметром без пробелов; в JSON — обычными массивами. Объём передаётся десятичной строкой, например "600".
-  version: 0.5.0
+  version: 0.6.0
 
 servers:
   - url: http://localhost:8080
@@ -23,8 +23,9 @@ paths:
         - Reference data
       operationId: listRegions
       summary: List regions
-      description: |-
-        Возвращает территории с хотя бы одним сохранённым наблюдением любого источника, топлива и даты: okatoCode и name. includeEmptyRegions=true включает также территории без данных. Сортировка по имени, затем ОКАТО. Каталог обновляется на старте и раз в неделю, неизменившаяся выдача не перезаписывается.
+      description: "Возвращает территории с хотя бы одним сохранённым наблюдением любого источника, топлива и даты: okatoCode и name.
+        includeEmptyRegions=true включает также территории без данных. Сортировка по имени, затем ОКАТО. Каталог обновляется на старте и раз
+        в неделю, неизменившаяся выдача не перезаписывается."
       parameters:
         - name: includeEmptyRegions
           in: query
@@ -34,21 +35,21 @@ paths:
             type: boolean
             default: false
       responses:
-        '200':
+        "200":
           description: Successful response
           headers:
             Cache-Control:
-              $ref: '#/components/headers/NoStore'
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RegionList'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+                $ref: "#/components/schemas/RegionList"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   #--------------------------------------------------------------------------
   /api/v1/fuel-types:
@@ -57,179 +58,21 @@ paths:
         - Reference data
       operationId: listFuelTypes
       summary: List fuel types
-      description: |-
-        Возвращает enum топлива, название и rosstatCode из справочника товаров Витрины.
+      description: Возвращает код enum и название поддерживаемого топлива. Коды внешних справочников остаются внутри импорта.
       responses:
-        '200':
+        "200":
           description: Successful response
           headers:
             Cache-Control:
-              $ref: '#/components/headers/NoStore'
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FuelTypeList'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-
-  #--------------------------------------------------------------------------
-  /api/v1/fuel-prices/overview:
-    get:
-      tags:
-        - Fuel prices
-      operationId: getFuelPriceOverview
-      summary: Get price overview
-      description: |-
-        Возвращает сводку основного региона и минимум среди выбранных по общему срезу. При отсутствии истории отвечает 200 с явными null и статусами.
-      parameters:
-        - $ref: '#/components/parameters/BaseRegionCode'
-
-        - $ref: '#/components/parameters/FilterRegionCode'
-
-        - $ref: '#/components/parameters/Source'
-
-        - $ref: '#/components/parameters/FilterFuelType'
-
-        - $ref: '#/components/parameters/FilterDateFrom'
-
-        - $ref: '#/components/parameters/FilterDateTo'
-
-        - $ref: '#/components/parameters/Frequency'
-
-        - $ref: '#/components/parameters/DataVersion'
-
-      responses:
-        '200':
-          description: Successful response
-          headers:
-            Cache-Control:
-              $ref: '#/components/headers/NoStore'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PriceOverview'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '409':
-          $ref: '#/components/responses/DataVersionChanged'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-
-  #--------------------------------------------------------------------------
-  /api/v1/fuel-prices/trend:
-    get:
-      tags:
-        - Fuel prices
-      operationId: getFuelPriceTrend
-      summary: Get regional price trends
-      description: |-
-        Возвращает все наблюдения интервала для всех выбранных регионов одним пакетом. Нет запросов по одному региону или точке. История и подписи достаточны для графика, таблицы и подсказок. sourceUpdates передаёт состояния потоков один раз на ответ; source.updateKey каждой цены ссылается на запись этой карты. Явные пропуски относятся к общему календарю канонического набора, а не к выдуманным дням. Пагинации и скрытого усечения нет.
-      parameters:
-        - $ref: '#/components/parameters/BaseRegionCode'
-
-        - $ref: '#/components/parameters/FilterRegionCode'
-
-        - $ref: '#/components/parameters/Source'
-
-        - $ref: '#/components/parameters/FilterFuelType'
-
-        - $ref: '#/components/parameters/FilterDateFrom'
-
-        - $ref: '#/components/parameters/FilterDateTo'
-
-        - $ref: '#/components/parameters/Frequency'
-
-        - $ref: '#/components/parameters/DataVersion'
-
-      responses:
-        '200':
-          description: Successful response
-          headers:
-            Cache-Control:
-              $ref: '#/components/headers/NoStore'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PriceTrend'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '409':
-          $ref: '#/components/responses/DataVersionChanged'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-
-  #--------------------------------------------------------------------------
-  /api/v1/fuel-prices/comparison:
-    get:
-      tags:
-        - Fuel prices
-      operationId: getFuelPriceComparison
-      summary: Compare regional prices
-      description: |-
-        Возвращает последний общий период всех выбранных регионов и полные строки. Если общего периода нет, показывает последние индивидуальные цены без разниц и рейтинга. Повторный запрос сортировки не требует данных предыдущего ответа.
-      parameters:
-        - $ref: '#/components/parameters/BaseRegionCode'
-
-        - $ref: '#/components/parameters/FilterRegionCode'
-
-        - $ref: '#/components/parameters/Source'
-
-        - $ref: '#/components/parameters/FilterFuelType'
-
-        - $ref: '#/components/parameters/FilterDateFrom'
-
-        - $ref: '#/components/parameters/FilterDateTo'
-
-        - $ref: '#/components/parameters/Frequency'
-
-        - $ref: '#/components/parameters/DataVersion'
-
-        - name: sortBy
-          in: query
-          description: Поле сортировки; фактически применённое поле возвращается в ответе.
-          required: false
-          schema:
-            type: string
-            enum:
-              - PRICE
-              - REGION_NAME
-            default: PRICE
-
-        - name: sortOrder
-          in: query
-          description: Направление основного поля. При равенстве — название ASC, затем код ASC.
-          required: false
-          schema:
-            type: string
-            enum:
-              - ASC
-              - DESC
-            default: ASC
-
-      responses:
-        '200':
-          description: Successful response
-          headers:
-            Cache-Control:
-              $ref: '#/components/headers/NoStore'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PriceComparison'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '409':
-          $ref: '#/components/responses/DataVersionChanged'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+                $ref: "#/components/schemas/FuelTypeList"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   #--------------------------------------------------------------------------
   /api/v1/fuel-prices/observations/{observationId}:
@@ -238,37 +81,35 @@ paths:
         - Fuel prices
       operationId: getFuelPriceObservation
       summary: Get observation provenance
-      description: |-
-        Вызывается при открытии подробностей конкретной цены. observationId идентифицирует неизменяемую версию наблюдения; исправление цены создаёт новый ID. Полный ответ не требует сохранённой строки графика или справочника.
+      description: Вызывается при открытии подробностей конкретной цены. observationId идентифицирует неизменяемую версию наблюдения; исправление
+        цены создаёт новый ID. Полный ответ не требует сохранённой строки графика или справочника.
       parameters:
         - name: observationId
           in: path
-          description: Значение observationId доступной цены из overview, trend или comparison. Непрозрачный ID неизменяемого наблюдения;
-            сгенерированное клиентом значение string не является существующим ID и даст 404.
+          description: ID доступной цены из ответа страницы или расчёта.
           required: true
           schema:
             type: string
             minLength: 1
             maxLength: 128
-
       responses:
-        '200':
+        "200":
           description: Successful response
           headers:
             Cache-Control:
-              $ref: '#/components/headers/NoStore'
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PriceObservationResponse'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '404':
-          $ref: '#/components/responses/ResourceNotFound'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+                $ref: "#/components/schemas/PriceObservationResponse"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "404":
+          $ref: "#/components/responses/ResourceNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
   ###########################################################################
   # Refueling
@@ -279,31 +120,74 @@ paths:
         - Refueling
       operationId: calculateRefueling
       summary: Calculate refueling costs
-      description: |-
-        Один запрос возвращает два независимых расчёта: OFFICIAL/WEEKLY первым, MARKET/DAILY вторым. Для каждого источника выбирается своя последняя общая дата регионов не позднее selection.date, по всей сохранённой истории. В context обе границы dateFrom/dateTo равны запрошенной дате; фактическая дата цены находится в comparison.period. При отсутствии данных соответствующий результат имеет статус NO_DATA или NO_COMMON_PERIOD и null вместо суммы и сравнения. Ответ 200 также при отсутствии обоих рядов. expectedSnapshotIds сравниваются отдельно по источникам. Все результаты читаются из одной ревизии архива; ничего не сохраняется.
+      description: "Рассчитывает стоимость объёма по OFFICIAL и MARKET в одной транзакции чтения. Вход: регионы, топливо, дата и объём. Для
+        каждого источника используется последняя общая дата не позже запрошенной. Отсутствующий источник не блокирует второй результат."
       requestBody:
         description: Полный выбор и объём для расчёта.
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RefuelingCalculateRequest'
+              $ref: "#/components/schemas/RefuelingCalculateRequest"
       responses:
-        '200':
+        "200":
           description: Successful response
           headers:
             Cache-Control:
-              $ref: '#/components/headers/NoStore'
+              $ref: "#/components/headers/NoStore"
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RefuelingCalculation'
-        '400':
-          $ref: '#/components/responses/InvalidInput'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
+                $ref: "#/components/schemas/RefuelingCalculation"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/fuel-prices:
+    get:
+      tags:
+        - Fuel prices
+      operationId: getFuelPricePage
+      summary: Get both price sources
+      description: Сводка, история и сравнение OFFICIAL и MARKET в одном согласованном чтении. Контекст и состояния источников возвращаются один
+        раз. Отсутствие наблюдений одного источника не скрывает другой.
+      parameters:
+        - $ref: "#/components/parameters/BaseRegionCode"
+        - $ref: "#/components/parameters/FilterRegionCode"
+        - $ref: "#/components/parameters/FilterFuelType"
+        - $ref: "#/components/parameters/FilterDateFrom"
+        - $ref: "#/components/parameters/FilterDateTo"
+        - name: sortSource
+          in: query
+          schema:
+            $ref: "#/components/schemas/PriceSource"
+          description: Источник, по которому упорядочиваются регионы; по умолчанию OFFICIAL.
+        - name: sortBy
+          in: query
+          schema:
+            $ref: "#/components/schemas/ComparisonSortBy"
+        - name: sortOrder
+          in: query
+          schema:
+            $ref: "#/components/schemas/SortOrder"
+      responses:
+        "200":
+          description: Successful response
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PricePage"
+        "400":
+          $ref: "#/components/responses/InvalidInput"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 
 components:
   parameters:
@@ -375,15 +259,6 @@ components:
       schema:
         $ref: "#/components/schemas/PriceSource"
 
-    DataVersion:
-      name: dataVersion
-      in: query
-      description: |-
-        Необязательная оптимистическая проверка ревизии: передавайте meta.dataVersion предыдущего ответа. При независимом запросе параметр можно полностью опустить; пустая строка даёт 400. Если ревизия уже изменилась, 409 DataVersionChanged; старый архив по этому токену не восстанавливается.
-      required: false
-      schema:
-        $ref: '#/components/schemas/DataVersion'
-
   headers:
     NoStore:
       description: Ответ не требует HTTP-кеша клиента.
@@ -405,16 +280,6 @@ components:
 
     ResourceNotFound:
       description: Наблюдение с таким observationId не найдено.
-      headers:
-        Cache-Control:
-          $ref: '#/components/headers/NoStore'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
-    DataVersionChanged:
-      description: dataVersion уже не соответствует опубликованной ревизии. Передана currentDataVersion.
       headers:
         Cache-Control:
           $ref: '#/components/headers/NoStore'
@@ -454,13 +319,7 @@ components:
         - DESC
 
     DataVersion:
-      description: Непрозрачная ревизия опубликованного набора данных и справочников.
-      type: string
-      minLength: 1
-      maxLength: 128
-
-    SnapshotId:
-      description: Детерминированный идентификатор выбранного среза; не ID серверной сессии.
+      description: Информационная ревизия архива на момент согласованного чтения.
       type: string
       minLength: 1
       maxLength: 128
@@ -468,49 +327,49 @@ components:
     DecimalString:
       description: Неотрицательное десятичное значение без потери исходной точности.
       type: string
-      pattern: '^(0|[1-9][0-9]*)(\.[0-9]+)?$'
+      pattern: ^(0|[1-9][0-9]*)(\.[0-9]+)?$
       maxLength: 64
-      example: '72.50'
+      example: "72.50"
 
     NullableDecimalString:
       description: null означает отсутствие значения; это не нулевая цена.
       type: string
-      pattern: '^(0|[1-9][0-9]*)(\.[0-9]+)?$'
+      pattern: ^(0|[1-9][0-9]*)(\.[0-9]+)?$
       maxLength: 64
       nullable: true
 
     NullableSignedDecimalString:
       description: Разница цен с исходной точностью; null, если сравнение невозможно.
       type: string
-      pattern: '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$'
+      pattern: ^-?(0|[1-9][0-9]*)(\.[0-9]+)?$
       maxLength: 66
       nullable: true
 
     Money:
       description: Неотрицательная сумма в рублях, ровно два знака после точки.
       type: string
-      pattern: '^(0|[1-9][0-9]*)\.[0-9]{2}$'
-      example: '43500.00'
+      pattern: ^(0|[1-9][0-9]*)\.[0-9]{2}$
+      example: "43500.00"
 
     SignedMoney:
       description: Разница округлённых сумм в рублях; отрицательное значение означает меньшую стоимость.
       type: string
-      pattern: '^-?(0|[1-9][0-9]*)\.[0-9]{2}$'
-      example: '-420.00'
+      pattern: ^-?(0|[1-9][0-9]*)\.[0-9]{2}$
+      example: "-420.00"
 
     NullablePercent:
       description: Проценты с двумя знаками после точки; null при отсутствии базы.
       type: string
-      pattern: '^-?(0|[1-9][0-9]*)\.[0-9]{2}$'
+      pattern: ^-?(0|[1-9][0-9]*)\.[0-9]{2}$
       nullable: true
-      example: '1.68'
+      example: "1.68"
 
     VolumeLiters:
       description: Положительный объём от 0.01 до 1000000.00 л включительно; максимум два знака после точки. Проверка диапазона обязательна на сервере.
       type: string
-      pattern: '^(0|[1-9][0-9]{0,6})(\.[0-9]{1,2})?$'
+      pattern: ^(0|[1-9][0-9]{0,6})(\.[0-9]{1,2})?$
       maxLength: 10
-      example: '600'
+      example: "600"
 
     ApiMeta:
       description: Метаданные ответа. serverDate — текущая календарная дата Europe/Moscow; generatedAt — RFC 3339 с часовым поясом.
@@ -531,7 +390,7 @@ components:
           type: string
           format: date
         dataVersion:
-          $ref: '#/components/schemas/DataVersion'
+          $ref: "#/components/schemas/DataVersion"
 
     ###########################################################################
     # Reference Data
@@ -542,7 +401,7 @@ components:
       type: string
       minLength: 1
       maxLength: 32
-      pattern: '^[A-Z0-9][A-Z0-9_-]*$'
+      pattern: ^[A-Z0-9][A-Z0-9_-]*$
 
     FuelType:
       type: string
@@ -569,19 +428,12 @@ components:
       required:
         - code
         - name
-        - rosstatCode
       type: object
       properties:
         code:
           $ref: "#/components/schemas/FuelType"
         name:
           type: string
-        rosstatCode:
-          type: string
-          enum:
-            - "7804"
-            - "7802"
-            - "7803"
 
     RegionList:
       description: Полный список субъектов РФ по названию, затем по коду; поиск по названию выполняется в UI.
@@ -591,11 +443,11 @@ components:
       type: object
       properties:
         meta:
-          $ref: '#/components/schemas/ApiMeta'
+          $ref: "#/components/schemas/ApiMeta"
         data:
           type: array
           items:
-            $ref: '#/components/schemas/RegionRef'
+            $ref: "#/components/schemas/RegionRef"
 
     FuelTypeList:
       description: Поддерживаемые виды топлива в порядке DIESEL, AI_92, AI_95.
@@ -605,11 +457,11 @@ components:
       type: object
       properties:
         meta:
-          $ref: '#/components/schemas/ApiMeta'
+          $ref: "#/components/schemas/ApiMeta"
         data:
           type: array
           items:
-            $ref: '#/components/schemas/FuelTypeRef'
+            $ref: "#/components/schemas/FuelTypeRef"
 
     ###########################################################################
     # Sources
@@ -665,11 +517,10 @@ components:
           nullable: true
 
     SourceUpdates:
-      description: |-
-        Состояние загрузки выбранной периодичности. Ключи — OFFICIAL или MARKET. Ошибка загрузки не удаляет сохранённые цены.
+      description: Состояние загрузки выбранной периодичности. Ключи — OFFICIAL или MARKET. Ошибка загрузки не удаляет сохранённые цены.
       type: object
       additionalProperties:
-        $ref: '#/components/schemas/SourceUpdate'
+        $ref: "#/components/schemas/SourceUpdate"
 
     ###########################################################################
     # Fuel Prices
@@ -681,98 +532,11 @@ components:
         - DAILY
         - WEEKLY
 
-    PriceBasis:
-      description: |-
-        Региональная средняя цена: официальная статистика Росстата/rustata либо среднее замеров регионального индекса BenzUp. Методика и покрытие передаются в source.
-      type: string
-      enum:
-        - REGIONAL_CONSUMER_AVERAGE
-
     ComparisonSortBy:
       type: string
       enum:
         - PRICE
         - REGION_NAME
-
-    PriceSelection:
-      description: Выбор регионов, топлива, диапазона дат и источника. Обе даты включительны; dateFrom <= dateTo <= serverDate.
-      required:
-        - baseRegionCode
-        - regionCodes
-        - fuelType
-        - dateFrom
-        - dateTo
-        - frequency
-        - source
-      type: object
-      properties:
-        baseRegionCode:
-          $ref: "#/components/schemas/RegionCode"
-        regionCodes:
-          type: array
-          items:
-            $ref: "#/components/schemas/RegionCode"
-          minItems: 1
-          maxItems: 4
-          uniqueItems: true
-        fuelType:
-          $ref: "#/components/schemas/FuelType"
-        dateFrom:
-          type: string
-          format: date
-        dateTo:
-          type: string
-          format: date
-        frequency:
-          $ref: "#/components/schemas/Frequency"
-        source:
-          $ref: "#/components/schemas/PriceSource"
-      additionalProperties: false
-
-    PriceContext:
-      description: Нормализованный выбор. key зависит от параметров выбора; dataVersion отражает изменения архива.
-      required:
-        - key
-        - baseRegion
-        - regions
-        - fuelType
-        - dateFrom
-        - dateTo
-        - frequency
-        - source
-        - basis
-        - unit
-      type: object
-      properties:
-        key:
-          type: string
-          minLength: 1
-        baseRegion:
-          $ref: "#/components/schemas/RegionRef"
-        regions:
-          type: array
-          items:
-            $ref: "#/components/schemas/RegionRef"
-          minItems: 1
-          maxItems: 4
-        fuelType:
-          $ref: "#/components/schemas/FuelTypeRef"
-        dateFrom:
-          type: string
-          format: date
-        dateTo:
-          type: string
-          format: date
-        frequency:
-          $ref: "#/components/schemas/Frequency"
-        source:
-          $ref: "#/components/schemas/PriceSource"
-        basis:
-          $ref: "#/components/schemas/PriceBasis"
-        unit:
-          type: string
-          enum:
-            - RUB/L
 
     PricePeriod:
       description: Единый период региональных наблюдений всех трёх каналов. Фильтрация идёт по referenceDate. Границы недельного периода
@@ -781,30 +545,16 @@ components:
         - key
         - frequency
         - referenceDate
-        - label
-        - startDate
-        - endDate
       type: object
       properties:
         key:
           type: string
           minLength: 1
         frequency:
-          $ref: '#/components/schemas/Frequency'
+          $ref: "#/components/schemas/Frequency"
         referenceDate:
           type: string
           format: date
-        label:
-          type: string
-          minLength: 1
-        startDate:
-          type: string
-          format: date
-          nullable: true
-        endDate:
-          type: string
-          format: date
-          nullable: true
 
     MissingPriceReason:
       type: string
@@ -824,12 +574,12 @@ components:
       type: object
       properties:
         priceRubPerLiter:
-          $ref: '#/components/schemas/DecimalString'
+          $ref: "#/components/schemas/DecimalString"
         observationId:
           type: string
           minLength: 1
         period:
-          $ref: '#/components/schemas/PricePeriod'
+          $ref: "#/components/schemas/PricePeriod"
         source:
           $ref: "#/components/schemas/PriceSource"
         missingReason:
@@ -859,28 +609,20 @@ components:
           enum:
             - null
         period:
-          $ref: '#/components/schemas/PricePeriod'
+          $ref: "#/components/schemas/PricePeriod"
         missingReason:
-          $ref: '#/components/schemas/MissingPriceReason'
+          $ref: "#/components/schemas/MissingPriceReason"
       additionalProperties: false
 
     PriceCell:
       description: Доступная цена или явный пропуск; варианты имеют разные обязательные поля.
       oneOf:
-        - $ref: '#/components/schemas/AvailablePriceCell'
-        - $ref: '#/components/schemas/MissingPriceCell'
+        - $ref: "#/components/schemas/AvailablePriceCell"
+        - $ref: "#/components/schemas/MissingPriceCell"
       example:
         priceRubPerLiter: null
         observationId: null
         missingReason: NO_DATA_IN_RANGE
-
-    PriceSeriesPoint:
-      description: Точка календаря ряда; period присутствует также при отсутствии наблюдения.
-      allOf:
-        - $ref: '#/components/schemas/PriceCell'
-        - type: object
-          required:
-            - period
 
     PriceChange:
       description: Изменение от startPrice до latestPrice той же сводки. Конечная цена отдельно не дублируется. При одной/нуле точек разницы null;
@@ -899,11 +641,11 @@ components:
             - INSUFFICIENT_DATA
             - ZERO_BASE
         startPrice:
-          $ref: '#/components/schemas/PriceCell'
+          $ref: "#/components/schemas/PriceCell"
         absoluteRubPerLiter:
-          $ref: '#/components/schemas/NullableSignedDecimalString'
+          $ref: "#/components/schemas/NullableSignedDecimalString"
         percent:
-          $ref: '#/components/schemas/NullablePercent'
+          $ref: "#/components/schemas/NullablePercent"
       additionalProperties: false
 
     ComparisonStatus:
@@ -919,119 +661,65 @@ components:
         SINGLE_REGION нет минимума или разницы; UI предлагает добавить регионы.
       required:
         - status
-        - snapshotId
-        - basePriceRubPerLiter
         - lowestPriceRubPerLiter
         - lowestRegions
-        - lowestDifferenceRubPerLiter
         - hasNewerObservations
       type: object
       properties:
         status:
-          $ref: '#/components/schemas/ComparisonStatus'
-        snapshotId:
-          type: string
-          minLength: 1
-          maxLength: 128
-          nullable: true
+          $ref: "#/components/schemas/ComparisonStatus"
         period:
-          $ref: '#/components/schemas/PricePeriod'
-        basePriceRubPerLiter:
-          $ref: '#/components/schemas/NullableDecimalString'
+          $ref: "#/components/schemas/PricePeriod"
         lowestPriceRubPerLiter:
-          $ref: '#/components/schemas/NullableDecimalString'
+          $ref: "#/components/schemas/NullableDecimalString"
         lowestRegions:
           type: array
           items:
-            $ref: '#/components/schemas/RegionRef'
+            $ref: "#/components/schemas/RegionRef"
           maxItems: 4
-        lowestDifferenceRubPerLiter:
-          $ref: '#/components/schemas/NullableSignedDecimalString'
         hasNewerObservations:
           type: boolean
 
     PriceOverview:
       description: Самодостаточная сводка; latestPrice и change относятся к основному региону, comparison — к общему периоду выбранных регионов.
       required:
-        - meta
-        - context
         - latestPrice
         - latestAvailableDate
         - change
         - comparison
-        - sourceUpdates
       type: object
       properties:
-        meta:
-          $ref: '#/components/schemas/ApiMeta'
-        context:
-          $ref: '#/components/schemas/PriceContext'
         latestPrice:
-          $ref: '#/components/schemas/PriceCell'
+          $ref: "#/components/schemas/PriceCell"
         latestAvailableDate:
           type: string
           format: date
           nullable: true
         change:
-          $ref: '#/components/schemas/PriceChange'
+          $ref: "#/components/schemas/PriceChange"
         comparison:
-          $ref: '#/components/schemas/ComparisonSummary'
-        sourceUpdates:
-          $ref: '#/components/schemas/SourceUpdates'
+          $ref: "#/components/schemas/ComparisonSummary"
 
     RegionPriceSeries:
       description: Все точки выбранного интервала по общему календарю периодов. Границы available относятся ко всему архиву этого ряда.
       required:
         - region
         - status
-        - firstAvailableDate
-        - lastAvailableDate
         - points
       type: object
       properties:
         region:
-          $ref: '#/components/schemas/RegionRef'
+          $ref: "#/components/schemas/RegionRef"
         status:
           type: string
           enum:
             - AVAILABLE
             - PARTIAL
             - NO_DATA
-        firstAvailableDate:
-          type: string
-          format: date
-          nullable: true
-        lastAvailableDate:
-          type: string
-          format: date
-          nullable: true
         points:
           type: array
           items:
-            $ref: '#/components/schemas/PriceSeriesPoint'
-
-    PriceTrend:
-      description: Один ответ для графика и таблицы всех выбранных регионов. Регионы без истории сохраняются; точки упорядочены по referenceDate,
-        затем по ключу периода.
-      required:
-        - meta
-        - context
-        - data
-        - sourceUpdates
-      type: object
-      properties:
-        meta:
-          $ref: '#/components/schemas/ApiMeta'
-        context:
-          $ref: '#/components/schemas/PriceContext'
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/RegionPriceSeries'
-          minItems: 1
-          maxItems: 4
-        sourceUpdates:
-          $ref: '#/components/schemas/SourceUpdates'
+            $ref: "#/components/schemas/TrendPoint"
 
     ComparisonRow:
       description: При сопоставимости price относится к общему периоду; иначе к последнему индивидуальному наблюдению внутри диапазона, разница
@@ -1043,32 +731,27 @@ components:
         - latestAvailableDate
         - differenceRubPerLiter
         - isLowest
-        - isHighest
       type: object
       properties:
         region:
-          $ref: '#/components/schemas/RegionRef'
+          $ref: "#/components/schemas/RegionRef"
         isBase:
           type: boolean
         price:
-          $ref: '#/components/schemas/PriceCell'
+          $ref: "#/components/schemas/PriceCell"
         latestAvailableDate:
           type: string
           format: date
           nullable: true
         differenceRubPerLiter:
-          $ref: '#/components/schemas/NullableSignedDecimalString'
+          $ref: "#/components/schemas/NullableSignedDecimalString"
         isLowest:
-          type: boolean
-        isHighest:
           type: boolean
 
     ComparisonInfo:
-      description: |-
-        AVAILABLE: последний общий период всех регионов. SINGLE_REGION: последняя цена единственного региона; без меток минимума/максимума. При NO_COMMON_PERIOD/NO_DATA snapshotId=null, period опущен, allPricesEqual=null; сортировка PRICE заменяется REGION_NAME ASC. Если все сопоставимые цены равны, allPricesEqual=true и метки минимума/максимума false у всех.
+      description: Ответ содержит актуальные данные одного согласованного чтения.
       required:
         - status
-        - snapshotId
         - sortBy
         - sortOrder
         - allPricesEqual
@@ -1076,18 +759,13 @@ components:
       type: object
       properties:
         status:
-          $ref: '#/components/schemas/ComparisonStatus'
-        snapshotId:
-          type: string
-          nullable: true
-          minLength: 1
-          maxLength: 128
+          $ref: "#/components/schemas/ComparisonStatus"
         period:
-          $ref: '#/components/schemas/PricePeriod'
+          $ref: "#/components/schemas/PricePeriod"
         sortBy:
-          $ref: '#/components/schemas/ComparisonSortBy'
+          $ref: "#/components/schemas/ComparisonSortBy"
         sortOrder:
-          $ref: '#/components/schemas/SortOrder'
+          $ref: "#/components/schemas/SortOrder"
         allPricesEqual:
           type: boolean
           nullable: true
@@ -1097,7 +775,7 @@ components:
     Comparison:
       description: Сведения о срезе и строки регионального сравнения. Объяснение и доступные действия UI выбирает по status.
       allOf:
-        - $ref: '#/components/schemas/ComparisonInfo'
+        - $ref: "#/components/schemas/ComparisonInfo"
         - type: object
           required:
             - data
@@ -1105,27 +783,9 @@ components:
             data:
               type: array
               items:
-                $ref: '#/components/schemas/ComparisonRow'
+                $ref: "#/components/schemas/ComparisonRow"
               minItems: 1
               maxItems: 4
-
-    PriceComparison:
-      description: Самодостаточное сравнение с ценами, датами и названиями; исходные значения не нужно собирать из других ответов.
-      required:
-        - meta
-        - context
-        - comparison
-        - sourceUpdates
-      type: object
-      properties:
-        meta:
-          $ref: '#/components/schemas/ApiMeta'
-        context:
-          $ref: '#/components/schemas/PriceContext'
-        comparison:
-          $ref: '#/components/schemas/Comparison'
-        sourceUpdates:
-          $ref: '#/components/schemas/SourceUpdates'
 
     PriceObservation:
       description: "Цена и фактический поставщик: ROSSTAT, RUSTATA или BENZUP. publicationDate — дата публикации, если поставщик её сообщает;
@@ -1133,8 +793,6 @@ components:
       required:
         - region
         - fuelType
-        - basis
-        - unit
         - price
         - latestAvailableDate
         - provider
@@ -1146,12 +804,6 @@ components:
           $ref: "#/components/schemas/RegionRef"
         fuelType:
           $ref: "#/components/schemas/FuelTypeRef"
-        basis:
-          $ref: "#/components/schemas/PriceBasis"
-        unit:
-          type: string
-          enum:
-            - RUB/L
         price:
           $ref: "#/components/schemas/AvailablePriceCell"
         latestAvailableDate:
@@ -1178,17 +830,18 @@ components:
       type: object
       properties:
         meta:
-          $ref: '#/components/schemas/ApiMeta'
+          $ref: "#/components/schemas/ApiMeta"
         observation:
-          $ref: '#/components/schemas/PriceObservation'
+          $ref: "#/components/schemas/PriceObservation"
         sourceUpdates:
-          $ref: '#/components/schemas/SourceUpdates'
+          $ref: "#/components/schemas/SourceUpdates"
 
     ###########################################################################
     # Refueling
     ###########################################################################
     RefuelingSelection:
-      description: Регионы, топливо и дата для обоих расчётов. Используется последняя общая цена не позднее date; date <= serverDate. Источник и периодичность определяются сервером.
+      description: Регионы, топливо и дата для обоих расчётов. Используется последняя общая цена не позднее date; date <= serverDate. Источник и
+        периодичность определяются сервером.
       required:
         - baseRegionCode
         - regionCodes
@@ -1197,16 +850,16 @@ components:
       type: object
       properties:
         baseRegionCode:
-          $ref: '#/components/schemas/RegionCode'
+          $ref: "#/components/schemas/RegionCode"
         regionCodes:
           type: array
           minItems: 1
           maxItems: 4
           uniqueItems: true
           items:
-            $ref: '#/components/schemas/RegionCode'
+            $ref: "#/components/schemas/RegionCode"
         fuelType:
-          $ref: '#/components/schemas/FuelType'
+          $ref: "#/components/schemas/FuelType"
         date:
           type: string
           format: date
@@ -1220,17 +873,9 @@ components:
       type: object
       properties:
         selection:
-          $ref: '#/components/schemas/RefuelingSelection'
+          $ref: "#/components/schemas/RefuelingSelection"
         volumeLiters:
-          $ref: '#/components/schemas/VolumeLiters'
-        expectedSnapshotIds:
-          type: object
-          properties:
-            OFFICIAL:
-              $ref: '#/components/schemas/SnapshotId'
-            MARKET:
-              $ref: '#/components/schemas/SnapshotId'
-          additionalProperties: false
+          $ref: "#/components/schemas/VolumeLiters"
       additionalProperties: false
       example:
         selection:
@@ -1238,7 +883,7 @@ components:
           regionCodes:
             - REGION_FROM_CATALOG
           fuelType: DIESEL
-          date: '2026-10-25'
+          date: 2026-10-25
         volumeLiters: "600"
 
     RefuelingRow:
@@ -1248,33 +893,19 @@ components:
       required:
         - region
         - price
-        - latestAvailableDate
-        - differenceRubPerLiter
-        - isLowest
-        - isHighest
         - totalRub
         - differenceRub
         - relation
       type: object
       properties:
         region:
-          $ref: '#/components/schemas/RegionRef'
+          $ref: "#/components/schemas/RegionRef"
         price:
-          $ref: '#/components/schemas/AvailablePriceCell'
-        latestAvailableDate:
-          type: string
-          format: date
-          nullable: true
-        differenceRubPerLiter:
-          $ref: '#/components/schemas/NullableSignedDecimalString'
-        isLowest:
-          type: boolean
-        isHighest:
-          type: boolean
+          $ref: "#/components/schemas/AvailablePriceCell"
         totalRub:
-          $ref: '#/components/schemas/Money'
+          $ref: "#/components/schemas/Money"
         differenceRub:
-          $ref: '#/components/schemas/SignedMoney'
+          $ref: "#/components/schemas/SignedMoney"
         relation:
           type: string
           enum:
@@ -1288,7 +919,7 @@ components:
       description: Тот же срез и единый массив строк сравнения с денежными результатами. Для основного региона relation=BASE заменяет isBase.
         Строки содержат все цены, разницы и метки для синхронизации таблицы сравнения с расчётом.
       allOf:
-        - $ref: '#/components/schemas/ComparisonInfo'
+        - $ref: "#/components/schemas/ComparisonInfo"
         - type: object
           required:
             - data
@@ -1296,40 +927,39 @@ components:
             data:
               type: array
               items:
-                $ref: '#/components/schemas/RefuelingRow'
+                $ref: "#/components/schemas/RefuelingRow"
               minItems: 1
               maxItems: 4
 
     RefuelingSourceCalculation:
-      description: Независимый расчёт одного источника. AVAILABLE/SINGLE_REGION содержит сумму и сравнение; NO_DATA/NO_COMMON_PERIOD — null. snapshotChanged=null без ожидаемого ID, иначе сравнение с текущим срезом, в том числе исчезнувшим.
+      description: Независимый результат одного источника. При отсутствии сопоставимых наблюдений baseTotalRub и comparison равны null.
       required:
-        - context
         - status
         - baseTotalRub
-        - snapshotChanged
         - comparison
+        - source
+        - frequency
       type: object
       properties:
-        context:
-          $ref: '#/components/schemas/PriceContext'
         status:
-          $ref: '#/components/schemas/ComparisonStatus'
+          $ref: "#/components/schemas/ComparisonStatus"
         baseTotalRub:
           type: string
           nullable: true
-          pattern: '^(0|[1-9][0-9]*)\.[0-9]{2}$'
-        snapshotChanged:
-          type: boolean
-          nullable: true
+          pattern: ^(0|[1-9][0-9]*)\.[0-9]{2}$
         comparison:
           type: object
           nullable: true
           oneOf:
-            - $ref: '#/components/schemas/RefuelingComparison'
+            - $ref: "#/components/schemas/RefuelingComparison"
             - type: object
               nullable: true
               enum:
                 - null
+        source:
+          $ref: "#/components/schemas/PriceSource"
+        frequency:
+          $ref: "#/components/schemas/Frequency"
       additionalProperties: false
 
     RefuelingCalculation:
@@ -1340,12 +970,13 @@ components:
         - currency
         - results
         - sourceUpdates
+        - context
       type: object
       properties:
         meta:
-          $ref: '#/components/schemas/ApiMeta'
+          $ref: "#/components/schemas/ApiMeta"
         volumeLiters:
-          $ref: '#/components/schemas/VolumeLiters'
+          $ref: "#/components/schemas/VolumeLiters"
         currency:
           type: string
           enum:
@@ -1355,9 +986,11 @@ components:
           minItems: 2
           maxItems: 2
           items:
-            $ref: '#/components/schemas/RefuelingSourceCalculation'
+            $ref: "#/components/schemas/RefuelingSourceCalculation"
         sourceUpdates:
-          $ref: '#/components/schemas/SourceUpdates'
+          $ref: "#/components/schemas/SourceUpdates"
+        context:
+          $ref: "#/components/schemas/PricePageContext"
       additionalProperties: false
 
     ###########################################################################
@@ -1396,7 +1029,6 @@ components:
           enum:
             - InvalidInput
             - ResourceNotFound
-            - DataVersionChanged
             - InternalError
             - ServiceUnavailable
         message:
@@ -1411,9 +1043,7 @@ components:
         details:
           type: array
           items:
-            $ref: '#/components/schemas/ErrorDetail'
-        currentDataVersion:
-          $ref: '#/components/schemas/DataVersion'
+            $ref: "#/components/schemas/ErrorDetail"
       example:
         type: InvalidInput
         message: Объём должен быть больше нуля.
@@ -1423,3 +1053,98 @@ components:
           - field: volumeLiters
             code: OUT_OF_RANGE
             message: Допустимо от 0.01 до 1000000.00 л.
+    TrendPoint:
+      description: Точная дата сохранённого наблюдения. Отсутствующая цена не заменяется нулём.
+      type: object
+      required:
+        - date
+        - priceRubPerLiter
+        - observationId
+        - missingReason
+      properties:
+        date:
+          type: string
+          format: date
+        priceRubPerLiter:
+          $ref: "#/components/schemas/NullableDecimalString"
+        observationId:
+          type: string
+          nullable: true
+        missingReason:
+          type: string
+          nullable: true
+          enum:
+            - NO_DATA_IN_RANGE
+            - NO_OBSERVATION_FOR_PERIOD
+            - null
+    PricePageContext:
+      description: Общий выбор регионов, топлива и дат для обоих источников.
+      required:
+        - baseRegion
+        - regions
+        - fuelType
+        - dateFrom
+        - dateTo
+      type: object
+      properties:
+        baseRegion:
+          $ref: "#/components/schemas/RegionRef"
+        regions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RegionRef"
+          minItems: 1
+          maxItems: 4
+        fuelType:
+          $ref: "#/components/schemas/FuelTypeRef"
+        dateFrom:
+          type: string
+          format: date
+        dateTo:
+          type: string
+          format: date
+    PriceSourcePage:
+      type: object
+      required:
+        - frequency
+        - overview
+        - trend
+        - comparison
+      properties:
+        frequency:
+          $ref: "#/components/schemas/Frequency"
+        overview:
+          $ref: "#/components/schemas/PriceOverview"
+        trend:
+          type: array
+          items:
+            $ref: "#/components/schemas/RegionPriceSeries"
+        comparison:
+          $ref: "#/components/schemas/Comparison"
+    PricePage:
+      type: object
+      required:
+        - meta
+        - context
+        - sources
+        - sourceUpdates
+        - comparisonOrder
+      properties:
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
+        context:
+          $ref: "#/components/schemas/PricePageContext"
+        sources:
+          type: object
+          required:
+            - OFFICIAL
+            - MARKET
+          properties:
+            OFFICIAL:
+              $ref: "#/components/schemas/PriceSourcePage"
+            MARKET:
+              $ref: "#/components/schemas/PriceSourcePage"
+        sourceUpdates:
+          $ref: "#/components/schemas/SourceUpdates"
+        comparisonOrder:
+          $ref: "#/components/schemas/PriceSource"

@@ -1,11 +1,11 @@
-import { regionName } from "../regions/regionName";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Schema } from "../api/types";
-import { sourceNames } from "../api/types";
+import { sourceInfo } from "../sources/model";
 import { date, number, signed } from "../ui/format";
 import { Feedback, Loading } from "../ui/Feedback";
-import { PriceSource } from "../prices/PriceValue";
+import { SourceLabel } from "../sources/SourceLabel";
+import { Amount } from "../ui/Amount";
 import "./calculator.css";
 import { normalizeVolume } from "./model";
 
@@ -118,40 +118,41 @@ export function Calculator({
             {result.results.map((item) => (
               <section
                 className="source-calculation"
-                key={item.context.source}
-                data-source={item.context.source}
-                aria-label={`Расчёт: ${sourceNames[item.context.source]}`}
+                key={item.source}
+                data-source={item.source}
+                aria-label={`Расчёт: ${sourceInfo[item.source].name}`}
               >
-                <h3>{sourceNames[item.context.source]}</h3>
+                <h3>{sourceInfo[item.source].name}</h3>
                 <p className="muted">
-                  {regionName(item.context.baseRegion)} · {number(result.volumeLiters)} л
+                  {result.context.baseRegion.name} · {number(result.volumeLiters)} л
                 </p>
                 {item.baseTotalRub !== null && item.comparison ? (
                   <>
                     <p className="total-value">
-                      {number(item.baseTotalRub)} <span>₽</span>
+                      <Amount
+                        value={item.baseTotalRub}
+                        unit="₽"
+                      />
                     </p>
                     <p className="muted">
-                      {item.context.fuelType.name} · {date(item.comparison.period?.referenceDate)}
+                      {result.context.fuelType.name} · {date(item.comparison.period?.referenceDate)}
                     </p>
-                    {item.snapshotChanged && (
-                      <p
-                        className="snapshot-notice"
-                        role="status"
-                      >
-                        Цены изменились после просмотра. Расчёт обновлён.
-                      </p>
-                    )}
+
                     {item.comparison.data.map((row) => (
                       <div
                         className="calculation-row"
                         key={row.region.okatoCode}
                       >
                         <strong>
-                          {regionName(row.region)}
+                          {row.region.name}
                           {row.relation === "BASE" && " · мой"}
                         </strong>
-                        <span>{number(row.totalRub)} ₽</span>
+                        <span>
+                          <Amount
+                            value={row.totalRub}
+                            unit="₽"
+                          />
+                        </span>
                         <small>
                           {row.relation === "BASE"
                             ? "Основной регион"
@@ -159,7 +160,7 @@ export function Calculator({
                               ? "Стоимость одинакова"
                               : `${signed(row.differenceRub)} ₽ к моему региону`}
                         </small>
-                        <PriceSource price={row.price} />
+                        <SourceLabel source={row.price.source} />
                       </div>
                     ))}
                   </>

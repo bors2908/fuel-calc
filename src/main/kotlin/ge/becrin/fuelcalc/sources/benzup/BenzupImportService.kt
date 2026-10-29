@@ -1,19 +1,15 @@
 package ge.becrin.fuelcalc.sources.benzup
 
-import ge.becrin.fuelcalc.fuels.FuelType
+import ge.becrin.fuelcalc.config.BusinessCalendar
 import ge.becrin.fuelcalc.sources.PriceSource
 import ge.becrin.fuelcalc.sources.SourceProvider
-import ge.becrin.fuelcalc.sources.config.ImportProperties
-import ge.becrin.fuelcalc.sources.jpa.ImportStore
+import ge.becrin.fuelcalc.sources.jpa.PriceImportStore
 import ge.becrin.fuelcalc.sources.model.FetchWindow
 import ge.becrin.fuelcalc.sources.model.FetchedPrice
+import ge.becrin.fuelcalc.sources.service.ImportRunner
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.time.Clock
-import java.time.LocalDate
-import java.time.ZoneId
-import java.util.concurrent.locks.ReentrantLock
 
 @Service
 class BenzupImportService(
@@ -23,21 +19,15 @@ class BenzupImportService(
 
     private val catalog: RegionCatalog,
 
-    private val store: ImportStore,
+    private val store: PriceImportStore,
 
-    private val properties: ImportProperties,
+    private val runner: ImportRunner,
 
-    private val clock: Clock
+    private val calendar: BusinessCalendar
 ) {
-    private val lock = ReentrantLock()
-
     fun fetch() {
-        if (!properties.enabled || !catalog.isReady || !lock.tryLock()) {
-            return
-        }
-
-        try {
-            val today = LocalDate.now(clock.withZone(ZoneId.of(properties.timeZone)))
+        runner.run(PriceSource.MARKET) {
+            val today = calendar.today()
 
             log.info(
                 "Loading data [source={}, provider={}, from={}, until={}]",
@@ -46,7 +36,7 @@ class BenzupImportService(
 
             val prices = client.fetch().mapNotNull { row ->
                 mapping.okatoByRegionId[row.regionId]?.let(catalog::byOkatoCode)?.let { region ->
-                    FetchedPrice(region.okatoCode, FuelType.valueOf(row.fuelCode), today, row.price)
+                    FetchedPrice(region.okatoCode, row.fuel, today, row.price)
                 }
             }
 
@@ -58,12 +48,6 @@ class BenzupImportService(
                 "Data loaded [source={}, provider={}, from={}, until={}, prices={}, changed={}]",
                 PriceSource.MARKET, SourceProvider.BENZUP, today, today, prices.size, changed
             )
-        } catch (error: Exception) {
-            store.failed(PriceSource.MARKET, error)
-
-            log.warn("Data loading failed; saved data retained [source={}]", PriceSource.MARKET, error)
-        } finally {
-            lock.unlock()
         }
     }
 

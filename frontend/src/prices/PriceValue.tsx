@@ -1,42 +1,39 @@
-import type { PriceCell } from "../api/types";
-import { sourceNames } from "../api/types";
-import { date, number } from "../ui/format";
+import type { PresentedPrice } from "./presentation";
+import { date } from "../ui/format";
+import { Amount } from "../ui/Amount";
+import { SourceLabel } from "../sources/SourceLabel";
+import { ObservationButton } from "../observations/ObservationButton";
 
-export function PriceSource({ price }: { price: PriceCell }) {
-  return (
-    <span className="source-label">
-      {price.priceRubPerLiter === null ? "Нет наблюдения" : sourceNames[price.source]}
-    </span>
-  );
-}
+import "./price-value.css";
+
 export function PriceValue({
   price,
   onObservation,
 }: {
-  price: PriceCell;
+  price: PresentedPrice;
   onObservation?: (id: string) => void;
 }) {
-  if (price.priceRubPerLiter === null) {
+  if (price.status === "missing") {
     return <span className="muted">Нет данных за период</span>;
   }
   return (
     <div className="price-value">
       <strong>
-        {number(price.priceRubPerLiter)} <small>₽/л</small>
+        <Amount
+          value={price.value}
+          unit="₽/л"
+        />
       </strong>
       <span>
-        {date(price.period.referenceDate)}
+        {date(price.date)}
         {price.source === "OFFICIAL" && " · недельное наблюдение"}
       </span>
-      <PriceSource price={price} />
+      <SourceLabel source={price.source} />
       {onObservation && (
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => onObservation(price.observationId)}
-        >
-          Об источнике и дате
-        </button>
+        <ObservationButton
+          id={price.observationId}
+          onObservation={onObservation}
+        />
       )}
     </div>
   );

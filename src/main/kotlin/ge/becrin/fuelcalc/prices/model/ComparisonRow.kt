@@ -1,10 +1,10 @@
 package ge.becrin.fuelcalc.prices.model
 
-import ge.becrin.fuelcalc.regions.dto.RegionRefDto
+import ge.becrin.fuelcalc.regions.model.Region
 import java.math.BigDecimal
 
 data class ComparisonRow(
-    val region: RegionRefDto,
+    val region: Region,
 
     val isBase: Boolean,
 
@@ -12,7 +12,5 @@ data class ComparisonRow(
 
     val difference: BigDecimal?,
 
-    val isLowest: Boolean,
-
-    val isHighest: Boolean
+    val isLowest: Boolean
 )

@@ -1,15 +1,20 @@
 package ge.becrin.fuelcalc.api
 
+import ge.becrin.fuelcalc.regions.service.RegionQueryService
 import ge.becrin.fuelcalc.sources.PriceSource
 import ge.becrin.fuelcalc.sources.SourceProvider
-import ge.becrin.fuelcalc.sources.jpa.ImportStore
-import ge.becrin.fuelcalc.regions.service.RegionQueryService
+import ge.becrin.fuelcalc.sources.jpa.ImportStateStore
+import ge.becrin.fuelcalc.sources.jpa.PriceImportStore
+import ge.becrin.fuelcalc.sources.jpa.RegionImportStore
+import jakarta.persistence.EntityManager
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.web.servlet.MockMvc
@@ -21,9 +26,6 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
-import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
-import kotlin.test.assertTrue
 
 @SpringBootTest(properties = ["imports.enabled=false"])
 @AutoConfigureMockMvc
@@ -32,13 +34,25 @@ import kotlin.test.assertTrue
 @Transactional
 class BusinessApiTest {
     @Autowired
+    private lateinit var counter: SqlCounter
+
+    @Autowired
+    private lateinit var entities: EntityManager
+
+    @Autowired
+    private lateinit var store: PriceImportStore
+
+    @Autowired
+    private lateinit var stateStore: ImportStateStore
+
+    @Autowired
+    private lateinit var regionStore: RegionImportStore
+
+    @Autowired
     private lateinit var mvc: MockMvc
 
     @Autowired
     private lateinit var json: JsonMapper
-
-    @Autowired
-    private lateinit var store: ImportStore
 
     @Autowired
     private lateinit var jdbc: JdbcTemplate
@@ -52,7 +66,7 @@ class BusinessApiTest {
 
     @BeforeEach
     fun prepare() {
-        fixture = ArchiveFixture(store)
+        fixture = ArchiveFixture(store, regionStore)
         fixture.regions()
     }
 
@@ -64,8 +78,7 @@ class BusinessApiTest {
         val fuels = read("/api/v1/fuel-types").path("data")
 
         assertEquals(setOf("okatoCode", "name"), regions.path(0).properties().map { it.key }.toSet())
-        assertEquals(setOf("code", "name", "rosstatCode"), fuels.path(0).properties().map { it.key }.toSet())
-        assertEquals(setOf("7802", "7803", "7804"), fuels.toList().map { it.path("rosstatCode").asString() }.toSet())
+        assertEquals(setOf("code", "name"), fuels.path(0).properties().map { it.key }.toSet())
     }
 
     @Test
@@ -85,7 +98,7 @@ class BusinessApiTest {
         assertEquals(listOf("A", "B", "C", "D"), read("/api/v1/regions", mapOf("includeEmptyRegions" to "true"))
             .path("data").toList().map { it.path("okatoCode").asString() })
         assertEquals(4, regions.list(includeEmptyRegions = true).data.size)
-        assertEquals(4, store.savedRegions().size)
+        assertEquals(4, regionStore.savedRegions().size)
     }
 
     @Test
@@ -120,12 +133,11 @@ class BusinessApiTest {
         fixture.price("A", "72.50")
         fixture.price("B", "81.00", date = "2026-10-26", provider = SourceProvider.BENZUP)
 
-        val response = prices("trend", source = "MARKET", frequency = "DAILY")
+        val response = prices("trend", source = "MARKET")
         val series = response.path("data")
 
         assertEquals("NO_DATA", series.path(0).path("status").asString())
-        assertEquals("MARKET", series.path(1).path("points").path(0).path("source").asString())
-        assertEquals("DAILY", series.path(1).path("points").path(0).path("period").path("frequency").asString())
+        assertEquals("2026-10-26", series.path(1).path("points").path(0).path("date").asString())
     }
 
     @Test
@@ -146,21 +158,28 @@ class BusinessApiTest {
     }
 
     @Test
-    fun testSnapshotChangesWhenSameObservationIsRevised() {
+    fun testPageContainsBothSourcesAndCompactHistoryWithoutDuplicateContext() {
         fixture.price("A", "72.50")
         fixture.price("B", "71.80")
+        fixture.price("A", "80.12", "2026-10-20", SourceProvider.BENZUP)
 
-        val before = prices("comparison").path("comparison").path("snapshotId").asString()
+        val response = page()
+        val official = response.path("sources").path("OFFICIAL")
+        val market = response.path("sources").path("MARKET")
+        val point = official.path("trend").path(0).path("points").path(0)
 
-        fixture.price("A", "73.00")
-
-        val after = prices("comparison").path("comparison").path("snapshotId").asString()
-
-        assertNotEquals(before, after)
+        assertEquals("WEEKLY", official.path("frequency").asString())
+        assertEquals("DAILY", market.path("frequency").asString())
+        assertEquals(setOf("date", "priceRubPerLiter", "observationId", "missingReason"), point.properties().map { it.key }.toSet())
+        assertEquals(false, official.has("context"))
+        assertEquals(false, official.path("overview").has("meta"))
+        assertEquals(false, official.path("comparison").has("snapshotId"))
+        assertEquals(false, official.path("comparison").path("data").path(0).has("isHighest"))
+        assertEquals(false, official.path("overview").path("comparison").has("basePriceRubPerLiter"))
     }
 
     @Test
-    fun testRefuelingUsesBackendPricesAndRejectsStaleSnapshot() {
+    fun testRefuelingUsesBackendPricesAndUsesCurrentPrices() {
         fixture.price("A", "72.50")
         fixture.price("B", "71.80")
 
@@ -192,7 +211,7 @@ class BusinessApiTest {
         val response = calculate()
         val results = response.path("results")
 
-        assertEquals(listOf("OFFICIAL", "MARKET"), results.toList().map { it.path("context").path("source").asString() })
+        assertEquals(listOf("OFFICIAL", "MARKET"), results.toList().map { it.path("source").asString() })
         assertEquals("43500.00", results.path(0).path("baseTotalRub").asString())
         assertEquals("48072.00", results.path(1).path("baseTotalRub").asString())
         assertEquals("2026-10-19", results.path(0).path("comparison").path("period").path("referenceDate").asString())
@@ -216,16 +235,15 @@ class BusinessApiTest {
         fixture.price("A", "92.00", "2026-10-19", SourceProvider.BENZUP)
         fixture.price("B", "93.00", "2026-10-19", SourceProvider.BENZUP)
 
-        val results = calculate(date = requestedDate).path("results")
+        val result = calculate(date = requestedDate)
+        val results = result.path("results")
 
         assertEquals("42000.00", results.path(0).path("baseTotalRub").asString())
         assertEquals(officialDate, results.path(0).path("comparison").path("period").path("referenceDate").asString())
         assertEquals("48000.00", results.path(1).path("baseTotalRub").asString())
         assertEquals(marketDate, results.path(1).path("comparison").path("period").path("referenceDate").asString())
-        assertTrue(results.all {
-            it.path("context").path("dateFrom").asString() == requestedDate &&
-                it.path("context").path("dateTo").asString() == requestedDate
-        })
+        assertEquals(requestedDate, result.path("context").path("dateFrom").asString())
+        assertEquals(requestedDate, result.path("context").path("dateTo").asString())
     }
 
     @Test
@@ -279,25 +297,8 @@ class BusinessApiTest {
     }
 
     @Test
-    fun testExpectedSnapshotsAreComparedPerSourceAndInvalidInputIsRejected() {
-        fixture.price("A", "72.50")
-        fixture.price("B", "71.80")
-        fixture.price("A", "80.12", "2026-10-20", SourceProvider.BENZUP)
-        fixture.price("B", "81.34", "2026-10-20", SourceProvider.BENZUP)
-
-        val before = calculate().path("results")
-        val officialId = before.path(0).path("comparison").path("snapshotId").asString()
-        val marketId = before.path(1).path("comparison").path("snapshotId").asString()
-
-        fixture.price("A", "73.00")
-
-        val results = calculate(expected = """"expectedSnapshotIds":{"OFFICIAL":"$officialId","MARKET":"$marketId"},""")
-            .path("results")
-
-        assertTrue(results.path(0).path("snapshotChanged").asBoolean())
-        assertEquals(false, results.path(1).path("snapshotChanged").asBoolean())
-        calculate(expected = """"expectedSnapshotIds":{"OFFICIAL":""},""", status = 400)
-        calculate(expected = """"expectedSnapshotIds":{"UNKNOWN":"test"},""", status = 400)
+    fun testObsoleteSnapshotInputAndInvalidVolumesAreRejected() {
+        calculate(expected = """"expectedSnapshotIds":{"OFFICIAL":"test"},""", status = 400)
         calculate(volume = "0", status = 400)
         calculate(volume = "0.001", status = 400)
     }
@@ -326,14 +327,10 @@ class BusinessApiTest {
     }
 
     @Test
-    fun testMonthlyAndProviderSelectionsAreRejectedAndCoverageIsRemoved() {
-        prices("trend", frequency = "MONTHLY", status = 400)
-        prices("trend", source = "ROSSTAT", status = 400)
-        prices("trend", source = "MARKET", frequency = "WEEKLY", status = 400)
-
-        val result = mvc.perform(get("/api/v1/fuel-prices/coverage")).andReturn()
-
-        assertEquals(404, result.response.status)
+    fun testObsoletePriceRoutesAreRemoved() {
+        for (endpoint in listOf("coverage", "overview", "trend", "comparison")) {
+            assertEquals(404, mvc.perform(get("/api/v1/fuel-prices/$endpoint")).andReturn().response.status)
+        }
     }
 
     @Test
@@ -341,12 +338,12 @@ class BusinessApiTest {
         assertEquals("NO_DATA", prices("trend").path("data").path(0).path("status").asString())
 
         fixture.price("A", "72.50")
-        store.failed(PriceSource.OFFICIAL, IllegalStateException("unavailable"))
+        stateStore.failed(PriceSource.OFFICIAL, IllegalStateException("unavailable"))
 
         val response = prices("overview")
 
         assertEquals("72.50", response.path("latestPrice").path("priceRubPerLiter").asString())
-        assertEquals("UNAVAILABLE", response.path("sourceUpdates").path("OFFICIAL").path("status").asString())
+        assertEquals("UNAVAILABLE", page().path("sourceUpdates").path("OFFICIAL").path("status").asString())
     }
 
     private fun read(
@@ -368,24 +365,73 @@ class BusinessApiTest {
         return response
     }
 
+    @Test
+    fun testServerSortingReturnsBothSourcesWithSharedMetadata() {
+        fixture.price("A", "72.50")
+        fixture.price("B", "71.80")
+        fixture.price("A", "80.12", "2026-10-20", SourceProvider.BENZUP)
+        fixture.price("B", "81.34", "2026-10-20", SourceProvider.BENZUP)
+
+        val response = page(mapOf("sortSource" to "MARKET", "sortBy" to "PRICE", "sortOrder" to "DESC"))
+
+        assertEquals("MARKET", response.path("comparisonOrder").asString())
+        assertEquals("B", response.path("sources").path("MARKET").path("comparison").path("data").path(0)
+            .path("region").path("okatoCode").asString())
+        assertEquals(2, response.path("sources").size())
+        assertEquals(false, response.path("sources").path("MARKET").has("meta"))
+    }
+
+    @Test
+    fun testMarketIsDefaultOrderingWhenOfficialArchiveIsEmpty() {
+        fixture.price("A", "80.12", "2026-10-20", SourceProvider.BENZUP)
+        fixture.price("B", "81.34", "2026-10-20", SourceProvider.BENZUP)
+
+        val response = page()
+
+        assertEquals("MARKET", response.path("comparisonOrder").asString())
+        assertEquals("NO_DATA", response.path("sources").path("OFFICIAL").path("comparison").path("status").asString())
+        assertEquals("AVAILABLE", response.path("sources").path("MARKET").path("comparison").path("status").asString())
+    }
+
+    @Test
+    fun testPricePageQueryCountStaysBoundedAcrossRegionsAndSources() {
+        val selected = listOf("A", "B", "C", "D")
+
+        for (region in selected) {
+            fixture.price(region, "72.50")
+            fixture.price(region, "73.50", provider = SourceProvider.BENZUP)
+        }
+
+        entities.flush()
+        entities.clear()
+        counter.reset()
+
+        val response = page(mapOf("filterRegionCode" to selected.joinToString(",")))
+        val selects = counter.count()
+
+        assertEquals(selected.size, response.path("sources").path("OFFICIAL").path("trend").size())
+        assertEquals(selected.size, response.path("sources").path("MARKET").path("trend").size())
+        assertTrue(selects <= 5, "Price page issued $selects SELECTs; expected no per-region or per-source queries")
+    }
+
+    private fun page(parameters: Map<String, String> = emptyMap()): JsonNode =
+        read("/api/v1/fuel-prices", mapOf(
+            "baseRegionCode" to "A", "filterRegionCode" to "A,B", "filterFuelType" to "DIESEL",
+            "filterDateFrom" to "2026-10-01", "filterDateTo" to "2026-10-26"
+        ) + parameters)
+
     private fun prices(
         endpoint: String,
-        source: String = "OFFICIAL",
-        frequency: String = "WEEKLY",
-        status: Int = 200
+        source: String = "OFFICIAL"
     ): JsonNode {
-        val path = "/api/v1/fuel-prices/$endpoint"
-        val result = mvc.perform(get(path)
-            .param("baseRegionCode", "A").param("filterRegionCode", "A,B").param("filterFuelType", "DIESEL")
-            .param("filterDateFrom", "2026-10-01").param("filterDateTo", "2026-10-26")
-            .param("frequency", frequency).param("source", source)).andReturn()
+        val sourceData = page().path("sources").path(source)
 
-        assertEquals(status, result.response.status, result.response.contentAsString)
-
-        val response = json.readTree(result.response.contentAsString)
-        contract.response(path, status, response)
-
-        return response
+        return when (endpoint) {
+            "overview" -> sourceData.path("overview")
+            "trend" -> json.createObjectNode().set("data", sourceData.path("trend"))
+            "comparison" -> json.createObjectNode().set("comparison", sourceData.path("comparison"))
+            else -> error("Unknown test section")
+        }
     }
 
     companion object {

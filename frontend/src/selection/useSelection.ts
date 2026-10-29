@@ -1,32 +1,35 @@
 import { useEffect, useState } from "react";
-import type { Selection } from "../api/types";
-import { readSelection, selectionError, writeSelection } from "./model";
-import type { Catalog, DateMode } from "./model";
+import { selectionHref } from "./model";
+import type { Catalog, Selection, SelectionModel } from "./types";
 
-export function useSelection(
+type Actions<S> = {
+  onApply?: (value: S) => void | Promise<void>;
+  onInvalidate: () => void;
+  onClear?: () => void;
+};
+export function useSelection<S extends Selection>(
   catalog: Catalog,
-  onApply: (selection: Selection) => void | Promise<void>,
-  onClear: () => void,
-  onCancel: () => void,
-  dateMode: DateMode = "range",
+  model: SelectionModel<S>,
+  { onApply, onInvalidate, onClear = onInvalidate }: Actions<S>,
 ) {
-  const [initial] = useState(() => readSelection(catalog, dateMode));
+  const [initial] = useState(() => model.parse(new URLSearchParams(location.search), catalog));
   const [selection, setSelection] = useState(initial.selection);
-  const [applied, setApplied] = useState<Selection | null>(
+  const [applied, setApplied] = useState<S | null>(
     initial.requested && !initial.error ? initial.selection : null,
   );
   const [error, setError] = useState(initial.error);
   useEffect(() => {
     if (initial.requested && !initial.error) {
-      void onApply(initial.selection);
+      void onApply?.(initial.selection);
     }
     function restore() {
-      const restored = readSelection(catalog, dateMode);
+      const restored = model.parse(new URLSearchParams(location.search), catalog);
       setSelection(restored.selection);
       setError(restored.error);
       setApplied(restored.requested && !restored.error ? restored.selection : null);
+      onInvalidate();
       if (restored.requested && !restored.error) {
-        void onApply(restored.selection);
+        void onApply?.(restored.selection);
       } else {
         onClear();
       }
@@ -42,24 +45,23 @@ export function useSelection(
       window.removeEventListener("popstate", restore);
       window.removeEventListener("pageshow", resume);
     };
-  }, [initial, catalog, onApply, onClear, dateMode]);
-  function change(value: Selection) {
+  }, [initial, catalog, model, onApply, onClear, onInvalidate]);
+  function change(value: S) {
+    const validation = model.validate(value, catalog);
     setSelection(value);
-    const validation = selectionError(value, catalog, dateMode);
     setError(value.baseRegionCode ? validation : null);
-    if (validation) {
-      onCancel();
-      return;
+    onInvalidate();
+    if (!validation) {
+      setApplied(value);
+      history.pushState(null, "", `${selectionHref(value, location.pathname)}${location.hash}`);
+      void onApply?.(value);
     }
-    setApplied(value);
-    writeSelection(value);
-    void onApply(value);
   }
   return {
     selection,
     applied,
     error,
-    valid: selectionError(selection, catalog, dateMode) === null && !error,
+    valid: model.validate(selection, catalog) === null && !error,
     change,
   };
 }

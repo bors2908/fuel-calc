@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
-import { api, errorMessage } from "../api/client";
-import type { Catalog } from "../selection/model";
+import { useEffect } from "react";
+import { useCatalog } from "../selection/useCatalog";
 import { SiteHeader } from "./SiteHeader";
 import { PricesPage } from "../prices/PricesPage";
 import { RefuelingPage } from "../refueling/RefuelingPage";
@@ -9,37 +8,12 @@ import "./app.css";
 
 export function App() {
   const refueling = location.pathname.replace(/\/$/, "") === "/refueling";
-  const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const { catalog, error, reload } = useCatalog();
   useEffect(() => {
     document.title = refueling
       ? "Заправка · Топливо для хозяйства"
       : "Цены · Топливо для хозяйства";
   }, [refueling]);
-  useEffect(() => {
-    const controller = new AbortController();
-    let current = true;
-    void Promise.all([api.regions(controller.signal), api.fuels(controller.signal)])
-      .then(([regions, fuels]) => {
-        if (current) {
-          setCatalog({
-            regions: regions.data,
-            fuels: fuels.data,
-            serverDate: regions.meta.serverDate,
-          });
-        }
-      })
-      .catch((failure: unknown) => {
-        if (current) {
-          setError(errorMessage(failure));
-        }
-      });
-    return () => {
-      current = false;
-      controller.abort();
-    };
-  }, [attempt]);
   return (
     <>
       <a
@@ -67,8 +41,7 @@ export function App() {
               {error ? (
                 <Feedback
                   onRetry={() => {
-                    setError(null);
-                    setAttempt(attempt + 1);
+                    void reload();
                   }}
                 >
                   {error}

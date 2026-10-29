@@ -1,11 +1,9 @@
-import type { Selection } from "../api/types";
-import { selectionHref, withDefaultRange } from "../selection/model";
+import type { Selection } from "../selection/types";
+import { selectionHref } from "../selection/model";
 
 type Props = { page: "prices" | "refueling"; selection?: Selection; showComparison?: boolean };
 export function SiteHeader({ page, selection, showComparison = false }: Props) {
-  const pricesHref = selection
-    ? selectionHref(page === "refueling" ? withDefaultRange(selection) : selection, "/")
-    : `/${location.search}`;
+  const pricesHref = selection ? selectionHref(selection, "/") : `/${location.search}`;
   const refuelingHref = selection
     ? selectionHref(selection, "/refueling")
     : `/refueling${location.search}`;

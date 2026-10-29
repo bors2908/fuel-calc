@@ -1,0 +1,23 @@
+.price-value {
+  flex-direction: column;
+  align-items: start;
+  gap: 0.25rem;
+  display: flex;
+}
+
+.price-value > strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+.price-value > strong small {
+  letter-spacing: normal;
+  font-size: 0.875rem;
+}
+
+.price-value > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}

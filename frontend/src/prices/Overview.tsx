@@ -1,64 +1,44 @@
-import { regionName } from "../regions/regionName";
+import { Amount } from "../ui/Amount";
+import { sourceInfo, sources } from "../sources/model";
 import type { Schema } from "../api/types";
-import { number, signed, date } from "../ui/format";
-import type { Block } from "./load";
+import { signed, date } from "../ui/format";
+import { presentPrice } from "./presentation";
 import { PriceValue } from "./PriceValue";
-import { Feedback } from "../ui/Feedback";
+
+import "./overview.css";
 
 export function Overview({
-  value,
+  market,
   official,
   showComparison,
   onObservation,
-  onRetry,
 }: {
-  value: Block<Schema<"PriceOverview">>;
-  official: Block<Schema<"PriceOverview">>;
+  market: Schema<"PriceOverview">;
+  official: Schema<"PriceOverview">;
   showComparison: boolean;
   onObservation: (id: string) => void;
-  onRetry: () => void;
 }) {
   return (
     <section
       className="overview"
       aria-label="Сводка цен"
     >
-      <div
-        data-source="OFFICIAL"
-        aria-label="Официальная сводка"
-      >
-        <p className="overview-label">Официальная цена · Росстат</p>
-        {official.value ? (
+      {sources.map((source) => (
+        <div
+          key={source}
+          data-source={source}
+          aria-label={`${sourceInfo[source].shortName} сводка`}
+        >
+          <p className="overview-label">
+            {sourceInfo[source].name} · {sourceInfo[source].provider}
+          </p>
           <SourceSummary
-            value={official.value}
+            value={source === "OFFICIAL" ? official : market}
             showComparison={showComparison}
             onObservation={onObservation}
           />
-        ) : (
-          <div className="overview-price">
-            <Feedback onRetry={onRetry}>Не удалось загрузить официальную сводку.</Feedback>
-          </div>
-        )}
-      </div>
-      <div
-        data-source="MARKET"
-        aria-label="Рыночная сводка"
-      >
-        <p className="overview-label">Рыночная цена · BenzUp</p>
-        {value.value ? (
-          <SourceSummary
-            value={value.value}
-            showComparison={showComparison}
-            onObservation={onObservation}
-          />
-        ) : (
-          <div className="overview-price">
-            <Feedback onRetry={onRetry}>
-              Не удалось загрузить рыночную сводку. Официальные данные остаются доступны.
-            </Feedback>
-          </div>
-        )}
-      </div>
+        </div>
+      ))}
     </section>
   );
 }
@@ -77,7 +57,7 @@ function SourceSummary({
     <>
       <div className="overview-price">
         <PriceValue
-          price={value.latestPrice}
+          price={presentPrice(value.latestPrice)}
           onObservation={onObservation}
         />
         {value.latestPrice.priceRubPerLiter === null && (
@@ -116,7 +96,10 @@ function SourceSummary({
             <div className="overview-stat-value">
               {comparison.lowestPriceRubPerLiter !== null ? (
                 <strong className="stat-value">
-                  {number(comparison.lowestPriceRubPerLiter)} <small>₽/л</small>
+                  <Amount
+                    value={comparison.lowestPriceRubPerLiter}
+                    unit="₽/л"
+                  />
                 </strong>
               ) : (
                 <span className="stat-message">Нет сопоставимой цены</span>
@@ -124,7 +107,7 @@ function SourceSummary({
             </div>
             <p className="overview-description">
               {comparison.lowestPriceRubPerLiter !== null
-                ? comparison.lowestRegions.map(regionName).join(", ")
+                ? comparison.lowestRegions.map((region) => region.name).join(", ")
                 : comparison.status === "SINGLE_REGION"
                   ? "Добавьте регион, чтобы сравнить цены."
                   : "Нет общего периода для сравнения."}

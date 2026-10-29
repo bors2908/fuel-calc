@@ -1,23 +1,17 @@
 package ge.becrin.fuelcalc.prices.model
 
-import ge.becrin.fuelcalc.fuels.dto.FuelTypeRefDto
-import ge.becrin.fuelcalc.prices.PriceFrequency
-import ge.becrin.fuelcalc.regions.dto.RegionRefDto
-import ge.becrin.fuelcalc.sources.PriceSource
+import ge.becrin.fuelcalc.fuels.FuelType
+import ge.becrin.fuelcalc.regions.model.Region
 import java.time.LocalDate
 
 data class PriceSelection(
-    val base: RegionRefDto,
+    val base: Region,
 
-    val regions: List<RegionRefDto>,
+    val regions: List<Region>,
 
-    val fuel: FuelTypeRefDto,
+    val fuel: FuelType,
 
     val from: LocalDate,
 
-    val until: LocalDate,
-
-    val frequency: PriceFrequency,
-
-    val source: PriceSource
+    val until: LocalDate
 )

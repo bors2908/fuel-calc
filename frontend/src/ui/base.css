@@ -21,6 +21,10 @@
   --on-dark: #cadbcf;
   --radius: 1.25rem;
   --space: 1.5rem;
+  --region-color-0: #245c43;
+  --region-color-1: #3167a8;
+  --region-color-2: #936024;
+  --region-color-3: #86546f;
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%235f6b63' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 

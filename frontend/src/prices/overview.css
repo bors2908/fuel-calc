@@ -1,0 +1,135 @@
+.overview {
+  --overview-value-size: clamp(2.25rem, 3.5vw, 3rem);
+
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 0 2rem;
+  display: grid;
+  padding-block: 2rem 3rem;
+  border-block-end: 1px solid var(--line);
+}
+
+.stat-value {
+  display: block;
+  margin-block-end: 0.5rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 500;
+}
+
+.overview-label {
+  margin-block-end: 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.overview .price-value > strong,
+.overview .stat-value {
+  margin-block-end: 0.5rem;
+  font-size: var(--overview-value-size);
+  line-height: 1.15;
+}
+
+.overview .price-value > strong small,
+.overview .stat-value small {
+  letter-spacing: normal;
+  font-size: 1rem;
+}
+
+.overview .price-value > span,
+.overview .source-label,
+.overview-description {
+  font-size: 0.875rem;
+}
+
+.overview > div > .muted {
+  margin-block-end: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.stat-message {
+  display: block;
+  margin-block-end: 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+@media (width<=900px) {
+  .overview {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (width<=620px) {
+  .overview {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+    gap: 1.5rem;
+    padding-block-end: 2rem;
+  }
+
+  .stat-value {
+    font-size: 1.4rem;
+  }
+}
+
+.overview-stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  display: grid;
+  margin-block-start: 1.5rem;
+  padding-block-start: 1.5rem;
+  border-block-start: 1px solid var(--line);
+  font-size: 0.875rem;
+}
+
+.overview-stats .stat-value {
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+}
+
+@media (width<=620px) {
+  .overview-stats {
+    grid-template-columns: 1fr;
+  }
+}
+
+.overview > div {
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  display: grid;
+}
+
+.overview-price {
+  min-block-size: 12rem;
+}
+
+.overview-price > .muted {
+  font-size: 0.875rem;
+}
+
+.overview-stats > div {
+  grid-template-rows: minmax(2.75rem, auto) minmax(3.5rem, auto) minmax(4rem, auto) minmax(
+      1.5rem,
+      auto
+    );
+  align-content: start;
+  display: grid;
+}
+
+.overview-stat-value {
+  min-block-size: 3.5rem;
+}
+
+@media (width<=620px) {
+  .overview-price {
+    min-block-size: 18rem;
+  }
+
+  .overview-stats > div {
+    grid-template-rows: minmax(2.75rem, auto) minmax(4.5rem, auto) minmax(4.5rem, auto) minmax(
+        3rem,
+        auto
+      );
+  }
+}

@@ -1,0 +1,162 @@
+.trend-section {
+  margin-block: 2rem 3rem;
+}
+
+.view-switch {
+  flex-wrap: wrap;
+  display: flex;
+  max-inline-size: 100%;
+  padding: 0.25rem;
+  background: var(--tint);
+  border-radius: 0.65rem;
+}
+
+.view-switch button {
+  background: transparent;
+  border: 0;
+}
+
+.view-switch button[aria-pressed="true"] {
+  background: var(--surface);
+  box-shadow: 0 1px 3px #18231f1a;
+}
+
+.chart {
+  margin-block: 1.5rem;
+}
+
+.chart text {
+  fill: var(--muted);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.chart-grid {
+  stroke: var(--line);
+  stroke-width: 1px;
+}
+
+.series {
+  fill: var(--series-color);
+  stroke: var(--series-color);
+}
+
+.series path {
+  fill: none;
+  stroke-width: 2px;
+}
+
+.series-0 {
+  --series-color: var(--region-color-0);
+}
+
+.series-1 {
+  --series-color: var(--region-color-1);
+}
+
+.series-2 {
+  --series-color: var(--region-color-2);
+}
+
+.series-3 {
+  --series-color: var(--region-color-3);
+}
+
+.series[data-source="MARKET"] path {
+  stroke-dasharray: 6 4;
+}
+
+.series[data-source="MARKET"] circle {
+  fill: var(--surface);
+  stroke-width: 2px;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.legend-region {
+  display: grid;
+  align-content: start;
+  gap: 0.625rem;
+}
+
+.legend-region > strong {
+  font-size: 0.875rem;
+}
+
+.legend-item {
+  align-items: center;
+  gap: 0.5rem;
+  display: flex;
+  max-inline-size: 100%;
+  padding: 0.4rem;
+  border: 0;
+  text-align: start;
+  font-size: 0.875rem;
+}
+
+.legend-item small {
+  display: block;
+  margin-block-start: 0.25rem;
+  color: var(--muted);
+}
+
+.legend-swatch {
+  inline-size: 1.5rem;
+  border-block-start: 3px solid var(--series-color);
+}
+
+.legend-item[data-source="MARKET"] .legend-swatch {
+  border-block-start-style: dashed;
+}
+
+.chart-detail {
+  margin-block: 1.5rem;
+  padding-block-start: 1.5rem;
+  border-block-start: 1px solid var(--line);
+}
+
+.chart-detail > select {
+  inline-size: fit-content;
+  max-inline-size: 100%;
+}
+
+.chart-prices {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: 1.5rem;
+  display: grid;
+  margin-block-start: 1.5rem;
+}
+
+.chart-region > h3 {
+  padding-block-end: 0.75rem;
+  border-block-end: 2px solid var(--series-color);
+}
+
+.chart-region-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.chart-region-sources h4 {
+  margin-block: 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.trend-section td {
+  min-inline-size: 13rem;
+}
+
+.chart-note {
+  margin-block: 1rem 0;
+  font-size: 0.875rem;
+}
+
+.trend-section th[scope="row"] {
+  min-inline-size: 9rem;
+}

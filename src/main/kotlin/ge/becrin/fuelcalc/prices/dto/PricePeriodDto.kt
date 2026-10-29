@@ -1,6 +1,7 @@
 package ge.becrin.fuelcalc.prices.dto
 
 import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.model.PricePeriod
 import java.time.LocalDate
 
 data class PricePeriodDto(
@@ -8,11 +9,7 @@ data class PricePeriodDto(
 
     val frequency: PriceFrequency,
 
-    val referenceDate: LocalDate,
-
-    val label: String,
-
-    val startDate: LocalDate?,
-
-    val endDate: LocalDate?
-)
+    val referenceDate: LocalDate
+) {
+    constructor(period: PricePeriod) : this(period.key, period.frequency, period.referenceDate)
+}

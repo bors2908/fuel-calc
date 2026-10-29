@@ -9,9 +9,7 @@ class ApiException(
 
     message: String,
 
-    val details: List<ErrorDetailDto>,
-
-    val currentDataVersion: String? = null
+    val details: List<ErrorDetailDto>
 ) : RuntimeException(message) {
     companion object {
         fun invalid(

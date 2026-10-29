@@ -17,8 +17,5 @@ data class ComparisonRowDto(
     val differenceRubPerLiter: String?,
 
     @get:JsonProperty("isLowest")
-    val isLowest: Boolean,
-
-    @get:JsonProperty("isHighest")
-    val isHighest: Boolean
+    val isLowest: Boolean
 )
