@@ -1,5 +1,6 @@
 import type { Selection } from "../selection/types";
 import { selectionHref } from "../selection/model";
+import { TractorLogo } from "./TractorLogo";
 
 type Props = { page: "prices" | "refueling"; selection?: Selection; showComparison?: boolean };
 export function SiteHeader({ page, selection, showComparison = false }: Props) {
@@ -17,7 +18,7 @@ export function SiteHeader({ page, selection, showComparison = false }: Props) {
           className="brand-mark"
           aria-hidden="true"
         >
-          ↗
+          <TractorLogo />
         </span>
         <span>
           Топливо для хозяйства<small>Региональные цены. Понятные расходы.</small>

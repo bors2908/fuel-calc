@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 136" fill="none">
+  <title>Трактор с канистрой топлива</title>
+  <g fill="#1e4938">
+    <path d="M30 22h58l10 58H30V22Z"/>
+    <rect x="25" y="17" width="70" height="8" rx="3"/>
+    <path d="M85 59h84a7 7 0 0 1 7 7v31H84V59Z"/>
+    <rect x="139" y="34" width="6" height="28" rx="2"/>
+    <rect x="136" y="31" width="12" height="5" rx="2"/>
+    <path d="M76 91h105v10H76zM83 99h17v7H83z"/>
+    <rect x="9" y="98" width="20" height="7" rx="2"/>
+  </g>
+  <g fill="#cadbcf">
+    <path d="M37 30h17v33H37zM61 30h21l6 33H61z"/>
+  </g>
+  <path d="M21 77a43 43 0 0 1 65-1l-2 10a40 40 0 0 0-63-1v-8Z" fill="#1e4938"/>
+  <path d="M109 65h19l6 6v25h-25V65Z" fill="#e8c483" stroke="#1e4938" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="116" y="69" width="10" height="5" rx="1.5" fill="#1e4938"/>
+  <path d="m115 80 13 10m0-10-13 10" stroke="#1e4938" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M167 69v16m-5-16v16" stroke="#cadbcf" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="52" cy="101" r="30" fill="#18231f"/>
+  <circle cx="52" cy="101" r="17" fill="#faf8f3"/>
+  <circle cx="52" cy="101" r="7" fill="#1e4938"/>
+  <circle cx="157" cy="111" r="20" fill="#18231f"/>
+  <circle cx="157" cy="111" r="11" fill="#faf8f3"/>
+  <circle cx="157" cy="111" r="5" fill="#1e4938"/>
+</svg>

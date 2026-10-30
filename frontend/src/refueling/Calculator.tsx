@@ -8,6 +8,7 @@ import { SourceLabel } from "../sources/SourceLabel";
 import { Amount } from "../ui/Amount";
 import "./calculator.css";
 import { normalizeVolume } from "./model";
+import { TractorLogo } from "../app/TractorLogo";
 
 type Props = {
   disabled: boolean;
@@ -187,7 +188,9 @@ export function Calculator({
           !calculating &&
           !error && (
             <div className="calculation-placeholder">
-              <span aria-hidden="true">↗</span>
+              <span aria-hidden="true">
+                <TractorLogo />
+              </span>
               <h3>Две оценки расходов</h3>
               <p>
                 Введите объём — покажем стоимость по официальной статистике и рыночному индексу.

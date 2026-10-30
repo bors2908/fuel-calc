@@ -26,9 +26,9 @@ export function RefuelingPage({ catalog }: { catalog: Catalog }) {
     calculation.result.context.fuelType.code === filters.selection.fuelType &&
     calculation.result.context.dateTo === filters.selection.date;
   const reason = !singleRegion
-    ? "Для списка заправок выберите ровно один регион."
+    ? "Для плана закупок топлива выберите ровно один регион."
     : differentRegion
-      ? `Список составлен для региона «${saved.list.region?.name}». Вернитесь к нему или очистите список.`
+      ? `План составлен для региона «${saved.list.region?.name}». Вернитесь к нему или очистите план.`
       : saved.list.entries.length >= savedLimit
         ? "Сохранено 10 заправок. Удалите запись, чтобы добавить новую."
         : calculation.result && saved.lastAdded === calculation.result
@@ -90,7 +90,7 @@ export function RefuelingPage({ catalog }: { catalog: Catalog }) {
                   }
                 }}
               >
-                Добавить в список · {saved.list.entries.length}/{savedLimit}
+                Добавить в план · {saved.list.entries.length}/{savedLimit}
               </button>
               {reason && <p>{reason}</p>}
             </div>

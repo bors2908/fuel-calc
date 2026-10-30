@@ -31,15 +31,15 @@
 }
 
 .brand-mark {
-  flex: 0 0 2.5rem;
-  place-items: center;
-  display: grid;
-  block-size: 2.5rem;
-  inline-size: 2.5rem;
-  color: var(--surface);
-  background: var(--forest);
-  border-radius: 0.75rem;
-  font-size: 1.65rem;
+  flex: 0 0 4.75rem;
+  display: block;
+  inline-size: 4.75rem;
+}
+
+.tractor-logo {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
 }
 
 .brand small {

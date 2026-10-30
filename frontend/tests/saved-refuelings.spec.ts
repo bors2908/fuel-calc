@@ -10,8 +10,9 @@ import { decode } from "../src/api/client";
 
 const singleSelection = { ...selection, regionCodes: [selection.baseRegionCode] };
 const singleUrl = `/refueling?region=${selection.baseRegionCode}&regions=${selection.baseRegionCode}&fuel=DIESEL&date=${selection.dateTo}`;
-const list = (page: Page) => page.getByRole("region", { name: "Список заправок", exact: true });
-const add = (page: Page) => page.getByRole("button", { name: /Добавить в список/ });
+const list = (page: Page) =>
+  page.getByRole("region", { name: "План закупок топлива", exact: true });
+const add = (page: Page) => page.getByRole("button", { name: /Добавить в план/ });
 async function save(page: Page, volume: string) {
   await page.getByLabel("Объём, л", { exact: true }).fill(volume);
   await page.getByRole("button", { name: "Рассчитать", exact: true }).click();
@@ -108,7 +109,7 @@ test("single-region refuelings persist and export the same displayed totals", as
   const pending = page.waitForEvent("download");
   await list(page).getByRole("button", { name: "Скачать CSV" }).click();
   const download = await pending;
-  expect(download.suggestedFilename()).toBe(`zapravki-${selection.baseRegionCode}.csv`);
+  expect(download.suggestedFilename()).toBe(`plan-zakupok-topliva-${selection.baseRegionCode}.csv`);
   const path = await download.path();
   if (!path) {
     throw new Error("Missing CSV download");
@@ -130,9 +131,7 @@ test("changing region or selecting multiple regions retains the list but blocks 
   const region = page.getByRole("combobox", { name: "Мой регион" });
   await region.fill("Ростов");
   await region.press("Enter");
-  await expect(page.locator(".save-refueling")).toContainText(
-    "Вернитесь к нему или очистите список",
-  );
+  await expect(page.locator(".save-refueling")).toContainText("Вернитесь к нему или очистите план");
   await expect(add(page)).toBeDisabled();
   await expect(list(page)).toContainText("Краснодарский край");
   await expect(list(page).locator("tbody tr")).toHaveCount(1);
@@ -216,10 +215,10 @@ test("ten is a hard limit and deleting or clearing allows more entries", async (
   await expect(add(page)).toBeEnabled();
   await add(page).click();
   await expect(list(page).locator("tbody tr")).toHaveCount(10);
-  await list(page).getByRole("button", { name: "Очистить список" }).click();
+  await list(page).getByRole("button", { name: "Очистить план" }).click();
   await list(page).getByRole("button", { name: "Отмена" }).click();
   await expect(list(page).locator("tbody tr")).toHaveCount(10);
-  await list(page).getByRole("button", { name: "Очистить список" }).click();
+  await list(page).getByRole("button", { name: "Очистить план" }).click();
   await list(page).getByRole("button", { name: "Удалить все заправки" }).click();
   await expect(list(page).locator("tbody tr")).toHaveCount(0);
   expect(await page.evaluate((key) => localStorage.getItem(key), savedStorageKey)).toBeNull();
@@ -266,7 +265,7 @@ test("corrupted storage is retained until the user explicitly clears it", async 
   expect(await page.evaluate((key) => localStorage.getItem(key), savedStorageKey)).toBe(
     "broken-json",
   );
-  await list(page).getByRole("button", { name: "Очистить список" }).click();
+  await list(page).getByRole("button", { name: "Очистить план" }).click();
   await list(page).getByRole("button", { name: "Удалить все заправки" }).click();
   await expect(list(page).getByRole("alert")).toHaveCount(0);
   await save(page, "200");

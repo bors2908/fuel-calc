@@ -27,6 +27,12 @@ test("page makes one request for both sources without revision preconditions", a
   );
   await expect(page.locator(".overview")).toContainText("72,50");
   await expect(page.locator(".overview")).toContainText("73,50");
+  await expect(
+    page.getByRole("heading", { name: "Актуальность данных", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator("main > :last-child")).toHaveClass("archive-info");
+  await expect(page.locator(".archive-info > p")).toHaveCount(0);
+  await expect(page.getByText("Два взгляда на цену", { exact: true })).toHaveCount(0);
 });
 
 test("weekly forecasts are translucent, labelled and have no observation links", async ({
@@ -188,7 +194,10 @@ for (const absent of ["OFFICIAL", "MARKET"] as const) {
         `.chart [data-source="${absent === "OFFICIAL" ? "MARKET" : "OFFICIAL"}"] circle`,
       ),
     ).not.toHaveCount(0);
-    await expect(page.locator(".archive-info")).toContainText("Источник временно недоступен");
+    await expect(page.locator(".archive-info")).toContainText(
+      "Последняя успешная загрузка: Неизвестно",
+    );
+    await expect(page.locator(".archive-info")).not.toContainText("Источник временно недоступен");
   });
 }
 

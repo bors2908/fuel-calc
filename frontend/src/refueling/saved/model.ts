@@ -49,7 +49,7 @@ export function savedTotals(entries: SavedRefueling[]) {
 }
 export function snapshot(result: Schema<"RefuelingCalculation">): SavedRefueling {
   if (result.context.regions.length !== 1) {
-    throw new Error("Выберите один регион для списка заправок.");
+    throw new Error("Выберите один регион для плана закупок топлива.");
   }
   function quote(source: Source): SavedQuote | null {
     const block = result.results.find((item) => item.source === source);

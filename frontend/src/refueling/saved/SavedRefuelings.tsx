@@ -26,13 +26,13 @@ export function SavedRefuelings({ list, warning, error, onRemove, onClear }: Pro
     >
       <div className="saved-heading">
         <div>
-          <p className="eyebrow">План заправок</p>
+          <p className="eyebrow">Планирование расходов</p>
           <h2
             id={id}
             ref={heading}
             tabIndex={-1}
           >
-            Список заправок
+            План закупок топлива
           </h2>
           <p className="muted">{list.region?.name ?? "Один регион · до 10 заправок"}</p>
         </div>
@@ -64,7 +64,7 @@ export function SavedRefuelings({ list, warning, error, onRemove, onClear }: Pro
         <div
           className="table-scroll"
           role="region"
-          aria-label="Сохранённые заправки"
+          aria-label="Заправки в плане закупок топлива"
           tabIndex={0}
         >
           <table>
@@ -149,7 +149,7 @@ export function SavedRefuelings({ list, warning, error, onRemove, onClear }: Pro
         </div>
       ) : (
         <p className="saved-empty">
-          Рассчитайте заправку для одного региона и добавьте результат в список.
+          Рассчитайте заправку для одного региона и добавьте результат в план.
         </p>
       )}
       <div className="saved-actions">
@@ -165,14 +165,14 @@ export function SavedRefuelings({ list, warning, error, onRemove, onClear }: Pro
           disabled={!list.entries.length && !warning}
           onClick={() => setConfirmClear(true)}
         >
-          Очистить список
+          Очистить план
         </button>
       </div>
       {confirmClear && (
         <div
           className="saved-confirm"
           role="group"
-          aria-label="Очистка списка"
+          aria-label="Очистка плана"
         >
           <p>Удалить все сохранённые заправки?</p>
           <button
@@ -194,7 +194,7 @@ export function SavedRefuelings({ list, warning, error, onRemove, onClear }: Pro
         </div>
       )}
       <p className="muted saved-footnote">
-        Список хранится только в этом браузере. Цены зафиксированы на момент расчёта и автоматически
+        План хранится только в этом браузере. Цены зафиксированы на момент расчёта и автоматически
         не обновляются.
       </p>
     </section>

@@ -84,7 +84,7 @@ export function downloadSavedCsv(list: SavedList) {
   const url = URL.createObjectURL(new Blob([savedCsv(list)], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
-  link.download = `zapravki-${list.region?.okatoCode ?? "region"}.csv`;
+  link.download = `plan-zakupok-topliva-${list.region?.okatoCode ?? "region"}.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }

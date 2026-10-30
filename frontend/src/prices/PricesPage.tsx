@@ -145,7 +145,6 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
                 onObservation={setObservation}
               />
             )}
-            <ArchiveInfo updates={page.sourceUpdates} />
             {observation && (
               <ObservationDialog
                 key={observation}
@@ -159,7 +158,7 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
           !prices.error && (
             <section className="landing-note">
               <p className="eyebrow">Региональные средние · открытые источники</p>
-              <h2>Выберите регион. Остальное — по делу.</h2>
+              <h2>Выберите регион и мы все рассчитаем.</h2>
               <p>
                 История цен, сравнение с другими регионами и стоимость вашего объёма — в одном
                 выборе.
@@ -185,6 +184,7 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
             Рассчитать заправку <span aria-hidden="true">↗</span>
           </a>
         </section>
+        {page && <ArchiveInfo updates={page.sourceUpdates} />}
       </main>
     </>
   );

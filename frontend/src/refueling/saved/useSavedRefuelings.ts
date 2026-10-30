@@ -30,7 +30,7 @@ export function useSavedRefuelings() {
         list.entries.length >= savedLimit ||
         (list.region && list.region.okatoCode !== result.context.baseRegion.okatoCode)
       ) {
-        throw new Error("Список заполнен или закреплён за другим регионом.");
+        throw new Error("План заполнен или закреплён за другим регионом.");
       }
       const entry = snapshot(result);
       const next = parseSavedList({

@@ -178,8 +178,8 @@
 
 .calculation-placeholder > span {
   display: block;
-  color: var(--forest);
-  font-size: 3rem;
+  inline-size: 6rem;
+  margin-block-end: 1rem;
 }
 
 .calculation-placeholder > p {
