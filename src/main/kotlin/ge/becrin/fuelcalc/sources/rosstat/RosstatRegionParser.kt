@@ -22,12 +22,29 @@ class RosstatRegionParser {
         val selected = ids.map { id ->
             val row = byId.getValue(id)
 
-            Region(row.path("-17006").asString(""), row.path("-17007").asString(""))
+            Region(row.path("-17006").asString(""), regionName(row.path("-17007").asString("")))
         }.sortedBy { it.okatoCode }
 
         require(selected.all { it.okatoCode.isNotBlank() && it.name.isNotBlank() }) { "Invalid selected territory" }
         require(selected.map { it.okatoCode }.distinct().size == selected.size) { "Duplicate selected OKATO code" }
 
         return selected
+    }
+
+    private fun regionName(name: String): String {
+        if (!name.contains("город федерального значения", ignoreCase = true)) {
+            return name
+        }
+
+        return WHITESPACE.replace(FEDERAL_CITY_DESCRIPTIONS.replace(name, ""), " ").trim()
+    }
+
+    companion object {
+        private val FEDERAL_CITY_DESCRIPTIONS = Regex(
+            "(?U)\\b(?:город федерального значения|столица российской федерации|город)\\b",
+            RegexOption.IGNORE_CASE
+        )
+
+        private val WHITESPACE = Regex("(?U)\\s+")
     }
 }
