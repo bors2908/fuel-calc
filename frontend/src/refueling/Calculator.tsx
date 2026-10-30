@@ -17,6 +17,7 @@ type Props = {
   onCalculate: (volume: string) => void;
   onChange: () => void;
   children: ReactNode;
+  resultActions?: ReactNode;
 };
 export function Calculator({
   disabled,
@@ -26,6 +27,7 @@ export function Calculator({
   onCalculate,
   onChange,
   children,
+  resultActions,
 }: Props) {
   const [volume, setVolume] = useState("600");
   const [validation, setValidation] = useState<string | null>(null);
@@ -193,6 +195,7 @@ export function Calculator({
             </div>
           )
         )}
+        {resultActions}
         <p className="calculation-disclaimer">
           Оценки по Росстату и рыночному индексу BenzUp. Даты источников могут различаться.
           Доставка, скидки и условия поставщика не учтены.

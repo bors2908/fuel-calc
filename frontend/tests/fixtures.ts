@@ -183,12 +183,12 @@ export function pageResponse(
     sourceUpdates: {},
   });
 }
-export function calculation(selected = selection): Schema<"RefuelingCalculation"> {
+export function calculation(selected = selection, volume = "600"): Schema<"RefuelingCalculation"> {
   const ctx = context({ ...selected, dateFrom: selected.dateTo });
   return decode("RefuelingCalculation", {
     meta,
     context: ctx,
-    volumeLiters: "600.00",
+    volumeLiters: Number(volume).toFixed(2),
     currency: "RUB",
     sourceUpdates: {},
     results: (["OFFICIAL", "MARKET"] as const).map((source) => {
@@ -198,14 +198,16 @@ export function calculation(selected = selection): Schema<"RefuelingCalculation"
         frequency: result.frequency,
         status: result.comparison.status,
         baseTotalRub: (
-          Number(price(selected.baseRegionCode, source).priceRubPerLiter) * 600
+          Number(price(selected.baseRegionCode, source).priceRubPerLiter) * Number(volume)
         ).toFixed(2),
         comparison: {
           ...result.comparison,
           data: ctx.regions.map((region) => ({
             region,
             price: price(region.okatoCode, source),
-            totalRub: (Number(price(region.okatoCode, source).priceRubPerLiter) * 600).toFixed(2),
+            totalRub: (
+              Number(price(region.okatoCode, source).priceRubPerLiter) * Number(volume)
+            ).toFixed(2),
             differenceRub: "0.00",
             relation: region.okatoCode === selected.baseRegionCode ? "BASE" : "EQUAL",
           })),
@@ -278,7 +280,7 @@ export async function mockApi(
         dateFrom: input.selection.date,
         dateTo: input.selection.date,
       };
-      await route.fulfill({ json: calculation(inputSelection) });
+      await route.fulfill({ json: calculation(inputSelection, input.volumeLiters) });
       return;
     }
     if (path.startsWith("observation-")) {

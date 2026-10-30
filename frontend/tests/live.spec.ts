@@ -110,4 +110,11 @@ test("real yearly forecast and future refueling share the same weekly prices", a
     expect(item.comparison?.data[0]?.price.forecast).toBeDefined();
   }
   await expect(page.locator(".calculation-result")).toContainText("Прогноз на неделю");
+  await page.getByRole("button", { name: /Добавить в список/ }).click();
+  await expect(page.locator(".saved-refuelings tbody tr")).toHaveCount(1);
+  await expect(page.locator(".saved-refuelings tbody")).toContainText("Прогноз на неделю");
+  await page.reload();
+  await expect(page.locator(".saved-refuelings tbody tr")).toHaveCount(1);
+  await expect(page.locator(".saved-refuelings tbody")).toContainText("Прогноз на неделю");
+  await page.screenshot({ path: "/private/tmp/fuel-saved-refuelings-live.png", fullPage: true });
 });
