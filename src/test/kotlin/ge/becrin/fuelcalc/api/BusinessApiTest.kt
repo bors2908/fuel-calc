@@ -414,6 +414,46 @@ class BusinessApiTest {
         assertTrue(selects <= 5, "Price page issued $selects SELECTs; expected no per-region or per-source queries")
     }
 
+    @Test
+    fun testWeeklyPricesOverlapMidweekRangeWithoutLeakingDailyOrNeighbouringWeeks() {
+        fixture.price("A", "70.00", "2026-10-12")
+        fixture.price("A", "71.00", "2026-10-18")
+        fixture.price("A", "72.50", "2026-10-19")
+        fixture.price("B", "71.80", "2026-10-19")
+        fixture.price("A", "73.00", "2026-10-26")
+        fixture.price("A", "80.00", "2026-10-19", SourceProvider.BENZUP)
+        fixture.price("A", "81.00", "2026-10-22", SourceProvider.BENZUP)
+
+        val response = page(mapOf("filterDateFrom" to "2026-10-22", "filterDateTo" to "2026-10-24"))
+        val official = response.path("sources").path("OFFICIAL")
+        val market = response.path("sources").path("MARKET")
+        val weekly = official.path("trend").path(0).path("points")
+        val daily = market.path("trend").path(0).path("points")
+
+        assertEquals("2026-10-22", response.path("context").path("dateFrom").asString())
+        assertEquals("2026-10-24", response.path("context").path("dateTo").asString())
+        assertEquals(1, weekly.size())
+        assertEquals("2026-10-19", weekly.path(0).path("date").asString())
+        assertEquals("72.50", weekly.path(0).path("priceRubPerLiter").asString())
+        assertEquals("AVAILABLE", official.path("comparison").path("status").asString())
+        assertEquals("72.50", official.path("overview").path("latestPrice").path("priceRubPerLiter").asString())
+        assertEquals(1, daily.size())
+        assertEquals("2026-10-22", daily.path(0).path("date").asString())
+    }
+
+    @Test
+    fun testWeeklyPriceCoversSundayButDoesNotExtendIntoNextWeek() {
+        fixture.price("A", "72.50", "2026-10-19")
+
+        val sunday = page(mapOf("filterDateFrom" to "2026-10-25", "filterDateTo" to "2026-10-25"))
+        val monday = page(mapOf("filterDateFrom" to "2026-10-26", "filterDateTo" to "2026-10-26"))
+
+        assertEquals("72.50", sunday.path("sources").path("OFFICIAL").path("overview")
+            .path("latestPrice").path("priceRubPerLiter").asString())
+        assertEquals("NO_DATA", monday.path("sources").path("OFFICIAL").path("comparison").path("status").asString())
+        assertEquals(0, monday.path("sources").path("OFFICIAL").path("trend").path(0).path("points").size())
+    }
+
     private fun page(parameters: Map<String, String> = emptyMap()): JsonNode =
         read("/api/v1/fuel-prices", mapOf(
             "baseRegionCode" to "A", "filterRegionCode" to "A,B", "filterFuelType" to "DIESEL",

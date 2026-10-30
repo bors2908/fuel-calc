@@ -18,6 +18,7 @@ import ge.becrin.fuelcalc.sources.model.FetchedPrice
 import ge.becrin.fuelcalc.sources.service.RegionCatalog
 import ge.becrin.fuelcalc.sources.service.SourceImportCompleted
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.test.assertEquals
@@ -130,9 +131,27 @@ class BenzupTestBackfillTest {
 
         market.fetch()
 
-        assertGenerated(regionCode, FuelType.DIESEL, earliest, listOf("63.00", "64.00", "65.00"))
-        assertGenerated(regionCode, FuelType.AI_92, calendar.today(), listOf("52.00", "53.00", "54.00"))
-        assertGenerated(otherRegionCode, FuelType.DIESEL, start.plusDays(19), listOf("73.00", "74.00", "75.00"))
+        assertGenerated(
+            region = regionCode,
+            fuel = FuelType.DIESEL,
+            anchor = earliest,
+            weekly = listOf("60.00", "61.00", "62.00", "63.00"),
+            anchorPrice = "65.00"
+        )
+        assertGenerated(
+            region = regionCode,
+            fuel = FuelType.AI_92,
+            anchor = calendar.today(),
+            weekly = listOf("40.00", "41.00", "42.00", "43.00"),
+            anchorPrice = "55.00"
+        )
+        assertGenerated(
+            region = otherRegionCode,
+            fuel = FuelType.DIESEL,
+            anchor = start.plusDays(19),
+            weekly = listOf("68.00", "69.00", "70.00", "71.00"),
+            anchorPrice = "75.00"
+        )
         val marketRows = marketRows()
 
         assertEquals("65.00", marketRows.single {
@@ -233,22 +252,41 @@ class BenzupTestBackfillTest {
         region: String,
         fuel: FuelType,
         anchor: LocalDate,
-        expectedWeeks: List<String>
+        weekly: List<String>,
+        anchorPrice: String
     ) {
         val rows = marketRows().filter { it.region.okatoCode == region && it.fuel == fuel && it.referenceDate < anchor }
+        val delta = anchorPrice.toBigDecimal().subtract(interpolatedPrice(weekly, anchor))
 
         assertEquals((anchor.toEpochDay() - start.toEpochDay()).toInt(), rows.size)
 
         for (row in rows) {
-            val week = ((row.referenceDate.toEpochDay() - start.toEpochDay()) / 7).toInt()
-            val difference = row.priceRubPerLiter.subtract(expectedWeeks[week].toBigDecimal())
+            val expected = interpolatedPrice(weekly, row.referenceDate).add(delta)
+            val difference = row.priceRubPerLiter.subtract(expected)
 
-            assertTrue(difference.abs() <= BigDecimal("0.10"))
-            assertTrue(difference.movePointRight(2).stripTrailingZeros().scale() <= 0)
+            assertTrue(difference.abs() <= BigDecimal("0.11"))
+            assertTrue(row.priceRubPerLiter.stripTrailingZeros().scale() <= 2)
             assertEquals(SourceProvider.BENZUP, row.provider)
             assertEquals(PriceSource.MARKET.frequency, row.frequency)
             assertNull(row.publicationDate)
         }
+    }
+
+    private fun interpolatedPrice(
+        weekly: List<String>,
+        date: LocalDate
+    ): BigDecimal {
+        val elapsedDays = date.toEpochDay() - start.toEpochDay()
+        val week = (elapsedDays / 7).toInt()
+        val day = elapsedDays % 7
+        val current = weekly[week].toBigDecimal()
+        val next = weekly.getOrNull(week + 1)?.toBigDecimal() ?: current
+
+        return current.add(
+            next.subtract(current)
+                .multiply(BigDecimal.valueOf(day))
+                .divide(BigDecimal.valueOf(7), 8, RoundingMode.HALF_UP)
+        )
     }
 
     private fun officialWeeks(

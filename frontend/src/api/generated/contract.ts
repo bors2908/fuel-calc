@@ -262,7 +262,7 @@ export interface components {
             change: components["schemas"]["PriceChange"];
             comparison: components["schemas"]["ComparisonSummary"];
         };
-        /** @description Все точки выбранного интервала по общему календарю периодов. Границы available относятся ко всему архиву этого ряда. */
+        /** @description Сохранённые наблюдения по общему календарю источника. Недельная цена действует семь календарных дней от date. Включаются недельные наблюдения, пересекающие выбранный диапазон; дневные наблюдения ограничены диапазоном строго. */
         RegionPriceSeries: {
             region: components["schemas"]["RegionRef"];
             /** @enum {string} */
@@ -399,7 +399,7 @@ export interface components {
             requestId: string;
             details: components["schemas"]["ErrorDetail"][];
         };
-        /** @description Точная дата сохранённого наблюдения. Отсутствующая цена не заменяется нулём. */
+        /** @description Исходная дата сохранённого наблюдения. Для недельной цены это начало семидневного периода; дата может предшествовать началу выбранного диапазона до 6 дней. Отсутствующая цена не заменяется нулём. */
         TrendPoint: {
             /** Format: date */
             date: string;
@@ -484,9 +484,9 @@ export interface components {
         FilterRegionCode: components["schemas"]["RegionCode"][];
         /** @description Один вид топлива. */
         FilterFuelType: components["schemas"]["FuelType"];
-        /** @description Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo. */
+        /** @description Включительная нижняя граница диапазона дней в формате YYYY-MM-DD; не позже filterDateTo. Недельные наблюдения включаются при пересечении их семидневного периода с диапазоном; referenceDate может быть раньше на 6 дней. */
         FilterDateFrom: string;
-        /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
+        /** @description Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
         FilterDateTo: string;
         /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
         Frequency: components["schemas"]["Frequency"];
@@ -618,9 +618,9 @@ export interface operations {
                 filterRegionCode: components["parameters"]["FilterRegionCode"];
                 /** @description Один вид топлива. */
                 filterFuelType: components["parameters"]["FilterFuelType"];
-                /** @description Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo. */
+                /** @description Включительная нижняя граница диапазона дней в формате YYYY-MM-DD; не позже filterDateTo. Недельные наблюдения включаются при пересечении их семидневного периода с диапазоном; referenceDate может быть раньше на 6 дней. */
                 filterDateFrom: components["parameters"]["FilterDateFrom"];
-                /** @description Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
+                /** @description Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
                 filterDateTo: components["parameters"]["FilterDateTo"];
                 /** @description Источник, по которому упорядочиваются регионы; по умолчанию OFFICIAL. */
                 sortSource?: components["schemas"]["PriceSource"];

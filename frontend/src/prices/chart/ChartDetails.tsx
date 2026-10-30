@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { priceOnDate } from "./model";
 import type { ChartGroup } from "./model";
 import { date } from "../../ui/format";
 import { sourceInfo } from "../../sources/model";
@@ -49,7 +50,7 @@ export function ChartDetails({
             </h3>
             <div className="chart-region-sources">
               {group.series.map((item) => {
-                const point = item.byDate.get(selectedDate);
+                const point = priceOnDate(item, selectedDate);
                 return (
                   <div
                     key={item.key}

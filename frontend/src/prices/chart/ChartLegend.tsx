@@ -3,9 +3,13 @@ import { sourceInfo } from "../../sources/model";
 export function ChartLegend({
   groups,
   baseRegionCode,
+  activeSeries,
+  onActivate,
 }: {
   groups: ChartGroup[];
   baseRegionCode: string;
+  activeSeries: string | null;
+  onActivate: (key: string | null) => void;
 }) {
   return (
     <div
@@ -24,10 +28,19 @@ export function ChartLegend({
             {group.region.okatoCode === baseRegionCode && " · мой регион"}
           </strong>
           {group.series.map((item) => (
-            <div
+            <button
+              type="button"
               className="legend-item"
               key={item.key}
               data-source={item.source}
+              data-active={activeSeries === item.key}
+              aria-label={`Показать точки: ${group.region.name} · ${sourceInfo[item.source].name}`}
+              disabled={!item.points.some((point) => point.priceRubPerLiter !== null)}
+              onPointerEnter={() => onActivate(item.key)}
+              onPointerLeave={() => onActivate(null)}
+              onFocus={() => onActivate(item.key)}
+              onBlur={() => onActivate(null)}
+              onClick={() => onActivate(item.key)}
             >
               <span
                 className="legend-swatch"
@@ -41,7 +54,7 @@ export function ChartLegend({
                     : sourceInfo[item.source].caption}
                 </small>
               </span>
-            </div>
+            </button>
           ))}
         </div>
       ))}

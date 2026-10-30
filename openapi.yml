@@ -226,7 +226,8 @@ components:
     FilterDateFrom:
       name: filterDateFrom
       in: query
-      description: Включительная нижняя граница referenceDate в формате YYYY-MM-DD; не позже filterDateTo.
+      description: Включительная нижняя граница диапазона дней в формате YYYY-MM-DD; не позже filterDateTo.
+        Недельные наблюдения включаются при пересечении их семидневного периода с диапазоном; referenceDate может быть раньше на 6 дней.
       required: true
       schema:
         type: string
@@ -235,7 +236,7 @@ components:
     FilterDateTo:
       name: filterDateTo
       in: query
-      description: Включительная верхняя граница referenceDate в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа
+      description: Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа
         API (Europe/Moscow).
       required: true
       schema:
@@ -701,7 +702,8 @@ components:
           $ref: "#/components/schemas/ComparisonSummary"
 
     RegionPriceSeries:
-      description: Все точки выбранного интервала по общему календарю периодов. Границы available относятся ко всему архиву этого ряда.
+      description: Сохранённые наблюдения по общему календарю источника. Недельная цена действует семь календарных дней от date.
+        Включаются недельные наблюдения, пересекающие выбранный диапазон; дневные наблюдения ограничены диапазоном строго.
       required:
         - region
         - status
@@ -1054,7 +1056,8 @@ components:
             code: OUT_OF_RANGE
             message: Допустимо от 0.01 до 1000000.00 л.
     TrendPoint:
-      description: Точная дата сохранённого наблюдения. Отсутствующая цена не заменяется нулём.
+      description: Исходная дата сохранённого наблюдения. Для недельной цены это начало семидневного периода;
+        дата может предшествовать началу выбранного диапазона до 6 дней. Отсутствующая цена не заменяется нулём.
       type: object
       required:
         - date

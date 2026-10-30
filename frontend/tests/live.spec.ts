@@ -31,6 +31,13 @@ test("real saved archive is returned as one page with original dates", async ({
     const count = value.sources[source].trend
       .flatMap((series) => series.points)
       .filter((point) => point.priceRubPerLiter !== null).length;
-    await expect(page.locator(`.chart [data-source="${source}"] circle`)).toHaveCount(count);
+    const circles = page.locator(`.chart [data-source="${source}"] circle`);
+    await expect(page.locator(".chart circle")).toHaveCount(0);
+    if (count > 0) {
+      await page.locator(`.legend-item[data-source="${source}"]`).hover();
+      await expect(circles).toHaveCount(count);
+      await page.mouse.move(0, 0);
+      await expect(circles).toHaveCount(0);
+    }
   }
 });

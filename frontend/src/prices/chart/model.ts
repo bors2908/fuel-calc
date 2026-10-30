@@ -1,5 +1,5 @@
 import type { Schema } from "../../api/types";
-import { sources } from "../../sources/model";
+import { sourceInfo, sources } from "../../sources/model";
 import type { Source } from "../../sources/model";
 import type { PresentedPrice } from "../presentation";
 import { presentTrendPoint } from "../presentation";
@@ -42,7 +42,13 @@ export function prepareChart(
   }));
   const series = groups.flatMap((group) => group.series);
   const dates = [
-    ...new Set(series.flatMap((item) => item.points.map((point) => point.date))),
+    ...new Set(
+      series.flatMap((item) =>
+        item.points
+          .filter((point) => point.date >= context.dateFrom && point.date <= context.dateTo)
+          .map((point) => point.date),
+      ),
+    ),
   ].sort();
   const prices = series.flatMap((item) =>
     item.points.flatMap((point) =>
@@ -56,4 +62,28 @@ export function prepareChart(
     prices,
     regionNames: context.regions.map((region) => region.name).join(", "),
   };
+}
+
+export function priceOnDate(series: ChartSeries, day: string): PresentedPrice | undefined {
+  const exact = series.byDate.get(day);
+  if (exact || series.source !== "OFFICIAL") {
+    return exact;
+  }
+  const selected = Date.parse(`${day}T00:00:00Z`);
+  const latest = series.points.reduce<Schema<"TrendPoint"> | undefined>((current, candidate) => {
+    return !current || candidate.date > current.date ? candidate : current;
+  }, undefined);
+  const point = series.points.reduce<Schema<"TrendPoint"> | undefined>((current, candidate) => {
+    return candidate.date <= day && (!current || candidate.date > current.date)
+      ? candidate
+      : current;
+  }, undefined);
+  if (!point) {
+    return undefined;
+  }
+  const age = (selected - Date.parse(`${point.date}T00:00:00Z`)) / 86_400_000;
+  const isLastAvailable = point.date === latest?.date && point.priceRubPerLiter !== null;
+  return age < sourceInfo.OFFICIAL.intervalDays || isLastAvailable
+    ? presentTrendPoint(point, series.source)
+    : undefined;
 }

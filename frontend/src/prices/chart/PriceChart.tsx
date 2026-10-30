@@ -10,6 +10,8 @@ export function PriceChart({
   to,
   regionNames,
   onSelect,
+  activeSeries,
+  onActivate,
 }: {
   series: ChartSeries[];
   prices: number[];
@@ -17,6 +19,8 @@ export function PriceChart({
   to: string;
   regionNames: string;
   onSelect: (date: string) => void;
+  activeSeries: string | null;
+  onActivate: (key: string | null) => void;
 }) {
   const id = useId();
   const chart = useRef<HTMLDivElement>(null);
@@ -56,9 +60,11 @@ export function PriceChart({
       >
         <title id={`${id}-title`}>Официальная и рыночная цена · {regionNames}</title>
         <desc id={`${id}-description`}>
-          Общая шкала по дням. Официальные точки — недельные, рыночные — дневные. Пропуски показаны
-          разрывами. Цвет обозначает регион; сплошная линия и закрашенные кружки — официальную цену,
-          пунктир и полые кружки — рыночную. Точные значения доступны в таблице и выборе даты.
+          Общая шкала по дням. Официальные точки — недельные; последняя недельная цена продолжается
+          до конца выбранного периода. Рыночные точки — дневные. Пропуски показаны разрывами. Цвет
+          обозначает регион; сплошная линия — официальную цену, пунктир — рыночную. Кружки
+          появляются при наведении на линию или её легенду. Точные значения доступны в таблице и
+          выборе даты.
         </desc>
         <text
           x="8"
@@ -88,32 +94,56 @@ export function PriceChart({
           );
         })}
         {series.map((item) => {
-          const path = seriesPath(item, { x, y });
+          const path = seriesPath(item, { x, y }, to);
           return (
             <g
               key={item.key}
               className={`series series-${item.index}`}
               data-source={item.source}
               data-region={item.region.okatoCode}
+              data-active={activeSeries === item.key}
+              onPointerEnter={() => onActivate(item.key)}
+              onPointerLeave={() => onActivate(null)}
             >
-              <path d={path} />
-              {item.points.map((point) =>
-                point.priceRubPerLiter === null ? null : (
-                  <circle
-                    key={point.date}
-                    cx={x(point.date)}
-                    cy={y(Number(point.priceRubPerLiter))}
-                    r={item.source === "OFFICIAL" ? 5 : 3.5}
-                    onPointerEnter={() => onSelect(point.date)}
-                    onPointerDown={() => onSelect(point.date)}
-                  >
-                    <title>
-                      {item.region.name} · {sourceInfo[item.source].name} · {date(point.date)} ·{" "}
-                      {number(point.priceRubPerLiter)} ₽/л
-                    </title>
-                  </circle>
-                ),
-              )}
+              <path
+                className="series-line"
+                d={path}
+              />
+              <path
+                className="series-hit"
+                d={
+                  path +
+                  item.points
+                    .flatMap((point) =>
+                      point.priceRubPerLiter !== null
+                        ? [`M${x(point.date) - 1},${y(Number(point.priceRubPerLiter))}h2 `]
+                        : [],
+                    )
+                    .join("")
+                }
+                aria-hidden="true"
+              />
+              {activeSeries === item.key &&
+                item.points.map((point) => {
+                  if (point.priceRubPerLiter === null) {
+                    return null;
+                  }
+                  return (
+                    <circle
+                      key={point.date}
+                      cx={x(point.date)}
+                      cy={y(Number(point.priceRubPerLiter))}
+                      r={item.source === "OFFICIAL" ? 5 : 3.5}
+                      onPointerEnter={() => onSelect(point.date)}
+                      onPointerDown={() => onSelect(point.date)}
+                    >
+                      <title>
+                        {item.region.name} · {sourceInfo[item.source].name} · {date(point.date)} ·{" "}
+                        {number(point.priceRubPerLiter)} ₽/л
+                      </title>
+                    </circle>
+                  );
+                })}
             </g>
           );
         })}

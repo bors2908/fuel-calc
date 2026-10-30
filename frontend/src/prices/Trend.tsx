@@ -16,6 +16,7 @@ type Props = {
 };
 export function Trend({ context, market, official, onObservation }: Props) {
   const [view, setView] = useState<"chart" | "table">("chart");
+  const [activeSeries, setActiveSeries] = useState<string | null>(null);
   const [active, setActive] = useState("");
   const model = prepareChart(context, official, market);
   const selectedDate = model.dates.includes(active) ? active : (model.dates.at(-1) ?? "");
@@ -53,6 +54,8 @@ export function Trend({ context, market, official, onObservation }: Props) {
       <ChartLegend
         groups={model.groups}
         baseRegionCode={context.baseRegion.okatoCode}
+        activeSeries={activeSeries}
+        onActivate={setActiveSeries}
       />
       {model.prices.length === 0 ? (
         <p className="empty-state">В выбранном диапазоне нет истории. Попробуйте другой период.</p>
@@ -67,6 +70,8 @@ export function Trend({ context, market, official, onObservation }: Props) {
                 to={context.dateTo}
                 regionNames={model.regionNames}
                 onSelect={setActive}
+                activeSeries={activeSeries}
+                onActivate={setActiveSeries}
               />
               <ChartDetails
                 groups={model.groups}
@@ -89,8 +94,9 @@ export function Trend({ context, market, official, onObservation }: Props) {
             />
           )}
           <p className="muted chart-note">
-            Каждый кружок — сохранённое наблюдение на указанную дату. Линии соединяют соседние
-            наблюдения; ежедневные официальные значения не рассчитываются. Разрыв означает
+            Каждый кружок — сохранённое наблюдение на указанную дату. Недельная цена действует семь
+            дней, а последний замер продолжается до конца выбранного периода. Наведите на линию или
+            её легенду, чтобы показать кружки; легенда также доступна с клавиатуры. Разрыв означает
             отсутствие данных.
           </p>
         </>

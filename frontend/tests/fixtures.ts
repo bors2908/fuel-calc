@@ -119,7 +119,14 @@ export function response(
             ? ["2026-10-05", "2026-10-12", "2026-10-19"]
             : ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21"]
           )
-            .filter((day) => day >= selected.dateFrom && day <= selected.dateTo)
+            .filter(
+              (day) =>
+                day <= selected.dateTo &&
+                (source === "OFFICIAL"
+                  ? Date.parse(`${day}T00:00:00Z`) + 6 * 86_400_000 >=
+                    Date.parse(`${selected.dateFrom}T00:00:00Z`)
+                  : day >= selected.dateFrom),
+            )
             .map((day) => {
               const absent = day === (source === "OFFICIAL" ? "2026-10-12" : "2026-10-19");
               const p = price(region.okatoCode, source);

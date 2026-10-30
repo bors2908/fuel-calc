@@ -29,10 +29,18 @@ test("all regions have both source styles and exact original dates", async ({ pa
   for (const code of selection.regionCodes) {
     const official = page.locator(`.chart .series[data-region="${code}"][data-source="OFFICIAL"]`);
     const market = page.locator(`.chart .series[data-region="${code}"][data-source="MARKET"]`);
+    await page
+      .locator(`.legend-region[data-region="${code}"] .legend-item[data-source="OFFICIAL"]`)
+      .hover();
     await expect(official.locator("circle")).toHaveCount(2);
+    await expect(market.locator("circle")).toHaveCount(0);
+    await page
+      .locator(`.legend-region[data-region="${code}"] .legend-item[data-source="MARKET"]`)
+      .hover();
+    await expect(official.locator("circle")).toHaveCount(0);
     await expect(market.locator("circle")).toHaveCount(4);
-    await expect(official.locator("path")).toHaveCSS("stroke-dasharray", "none");
-    await expect(market.locator("path")).toHaveCSS("stroke-dasharray", "6px, 4px");
+    await expect(official.locator(".series-line")).toHaveCSS("stroke-dasharray", "none");
+    await expect(market.locator(".series-line")).toHaveCSS("stroke-dasharray", "6px, 4px");
     expect(await official.evaluate((el) => getComputedStyle(el).stroke)).toBe(
       await market.evaluate((el) => getComputedStyle(el).stroke),
     );
@@ -42,9 +50,8 @@ test("all regions have both source styles and exact original dates", async ({ pa
     .selectOption("2026-10-20");
   const rostov = page.locator('.chart-region[data-region="61000000000"]');
   await expect(rostov.locator('[data-source="MARKET"]')).toContainText("72,80");
-  await expect(rostov.locator('[data-source="OFFICIAL"]')).toContainText(
-    "Нет наблюдения на эту дату",
-  );
+  await expect(rostov.locator('[data-source="OFFICIAL"]')).toContainText("71,80");
+  await expect(rostov.locator('[data-source="OFFICIAL"]')).toContainText("19 окт.");
   await page.getByRole("button", { name: "Таблица", exact: true }).click();
   await expect(page.locator('#trend th[scope="colgroup"]')).toHaveCount(3);
   expect(requests.length).toBe(count);
@@ -64,7 +71,11 @@ test("missing base history never hides comparison regions", async ({ page }) => 
     return route.fulfill({ json: value });
   });
   await page.goto(selectionUrl);
-  await expect(page.locator(".chart circle")).toHaveCount(12);
+  await expect(page.locator(".chart .series")).toHaveCount(6);
+  await page
+    .locator('.legend-region[data-region="61000000000"] .legend-item[data-source="MARKET"]')
+    .hover();
+  await expect(page.locator(".chart circle")).toHaveCount(4);
   await expect(
     page.locator(`.chart [data-region="${selection.baseRegionCode}"] circle`),
   ).toHaveCount(0);
@@ -86,6 +97,11 @@ for (const absent of ["OFFICIAL", "MARKET"] as const) {
     });
     await page.goto(selectionUrl);
     await expect(page.locator(`.chart [data-source="${absent}"] circle`)).toHaveCount(0);
+    await page
+      .locator(
+        `.legend-region[data-region="${selection.baseRegionCode}"] .legend-item[data-source="${absent === "OFFICIAL" ? "MARKET" : "OFFICIAL"}"]`,
+      )
+      .hover();
     await expect(
       page.locator(
         `.chart [data-source="${absent === "OFFICIAL" ? "MARKET" : "OFFICIAL"}"] circle`,
@@ -436,4 +452,53 @@ test("enlarged text keeps chart and forms within the page", async ({ page }) => 
     )
     .toBe(true);
   await page.screenshot({ path: "/private/tmp/fuel-chart-enlarged-text.png", fullPage: true });
+});
+
+test("markers appear only for the hovered curve or its legend and support keyboard focus", async ({
+  page,
+}) => {
+  const requests = await mockApi(page);
+  await page.goto(selectionUrl);
+  await expect(page.locator(".chart .series")).toHaveCount(6);
+  await expect(page.locator(".chart circle")).toHaveCount(0);
+  const before = requests.length;
+  const region = selection.baseRegionCode;
+  const legend = page.locator(
+    `.legend-region[data-region="${region}"] .legend-item[data-source="OFFICIAL"]`,
+  );
+  await legend.hover();
+  await expect(page.locator(".chart circle")).toHaveCount(2);
+  await expect(page.locator('.chart [data-source="MARKET"] circle')).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await expect(page.locator(".chart circle")).toHaveCount(0);
+  await legend.focus();
+  await expect(page.locator(".chart circle")).toHaveCount(2);
+  await legend.press("Tab");
+  await expect(page.locator('.chart [data-source="OFFICIAL"] circle')).toHaveCount(0);
+  await expect(page.locator(".chart circle")).toHaveCount(4);
+  await page.getByRole("button", { name: "Таблица", exact: true }).focus();
+  const target = page.locator(
+    '.chart .series[data-region="26000000000"][data-source="MARKET"] .series-line',
+  );
+  await target.scrollIntoViewIfNeeded();
+  const position = await target.evaluate((element) => {
+    if (!(element instanceof SVGPathElement)) {
+      throw new Error("Missing curve path");
+    }
+    const point = element.getPointAtLength(element.getTotalLength() / 3);
+    const matrix = element.getScreenCTM();
+    if (!matrix) {
+      throw new Error("Missing SVG transform");
+    }
+    const screen = point.matrixTransform(matrix);
+    return { x: screen.x, y: screen.y };
+  });
+  await page.mouse.move(position.x, position.y);
+  await expect(
+    page.locator('.chart .series[data-region="26000000000"][data-source="MARKET"] circle'),
+  ).toHaveCount(4);
+  await expect(page.locator(".chart circle")).toHaveCount(4);
+  await page.mouse.move(0, 0);
+  await expect(page.locator(".chart circle")).toHaveCount(0);
+  expect(requests.length).toBe(before);
 });

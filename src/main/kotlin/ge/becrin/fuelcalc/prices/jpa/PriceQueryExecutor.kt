@@ -14,7 +14,14 @@ import org.springframework.stereotype.Repository
 @Repository
 class PriceQueryExecutor(private val prices: FuelPriceRepository) {
     fun pageRows(selection: PriceSelection): List<PriceRow> =
-        prices.findPageRows(codes(selection), selection.fuel, selection.from, selection.until).map(::row)
+        prices.findPageRows(
+            regions = codes(selection),
+            fuel = selection.fuel,
+            from = selection.from,
+            until = selection.until,
+            weeklyFrom = selection.from.minusDays(6),
+            weeklySource = PriceSource.OFFICIAL
+        ).map(::row)
 
     fun pageBounds(selection: PriceSelection): Map<PriceSource, Map<String, SeriesBounds>> =
         prices.findBounds(codes(selection), selection.fuel).groupBy { it.source }.mapValues { (_, rows) ->

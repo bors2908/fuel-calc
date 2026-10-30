@@ -8,8 +8,10 @@ import ge.becrin.fuelcalc.sources.SourceProvider
 import ge.becrin.fuelcalc.sources.config.ImportProperties
 import ge.becrin.fuelcalc.sources.jpa.ImportStateRepository
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Clock
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.NavigableMap
 import java.util.TreeMap
 import kotlin.random.Random
@@ -59,7 +61,7 @@ class BenzupTestBackfillStore(
 
         for (anchor in anchors) {
             val weeks = official[anchor.region.okatoCode to anchor.fuel]
-            val anchorOfficial = weeklyPrice(weeks, anchor.referenceDate)
+            val anchorOfficial = interpolatedWeeklyPrice(weeks, anchor.referenceDate)
 
             if (anchorOfficial == null) {
                 skippedSeries++
@@ -71,13 +73,13 @@ class BenzupTestBackfillStore(
             var date = start
 
             while (date < anchor.referenceDate) {
-                val officialPrice = weeklyPrice(weeks, date)
+                val officialPrice = interpolatedWeeklyPrice(weeks, date)
 
                 if (officialPrice == null) {
                     missingDays++
                 } else {
                     val jitter = BigDecimal.valueOf(Random.nextLong(-10, 11), 2)
-                    val price = officialPrice.add(delta).add(jitter)
+                    val price = officialPrice.add(delta).add(jitter).setScale(2, RoundingMode.HALF_UP)
 
                     require(price.signum() > 0) {
                         "Non-positive test price [region=${anchor.region.okatoCode}, fuel=${anchor.fuel}, date=$date]"
@@ -107,12 +109,27 @@ class BenzupTestBackfillStore(
         return Result(generated.size, skippedSeries, missingDays)
     }
 
-    private fun weeklyPrice(
+    private fun interpolatedWeeklyPrice(
         weeks: NavigableMap<LocalDate, BigDecimal>?,
         date: LocalDate
     ): BigDecimal? {
-        val week = weeks?.floorEntry(date) ?: return null
+        val current = weeks?.floorEntry(date) ?: return null
 
-        return week.value.takeIf { date < week.key.plusWeeks(1) }
+        if (date >= current.key.plusWeeks(1)) {
+            return null
+        }
+
+        val next = weeks.higherEntry(current.key)
+
+        if (next == null || next.key != current.key.plusWeeks(1)) {
+            return current.value
+        }
+
+        val elapsedDays = ChronoUnit.DAYS.between(current.key, date)
+        val shift = next.value.subtract(current.value)
+            .multiply(BigDecimal.valueOf(elapsedDays))
+            .divide(BigDecimal.valueOf(7), 8, RoundingMode.HALF_UP)
+
+        return current.value.add(shift)
     }
 }

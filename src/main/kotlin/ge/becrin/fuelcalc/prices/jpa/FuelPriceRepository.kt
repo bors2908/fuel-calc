@@ -28,14 +28,21 @@ interface FuelPriceRepository : JpaRepository<FuelPriceEntity, Long> {
     @Query("""
         SELECT price FROM FuelPrice price JOIN FETCH price.region region
         WHERE region.okatoCode IN :regions AND price.fuel = :fuel
-          AND price.referenceDate BETWEEN :from AND :until
+          AND (price.referenceDate BETWEEN :from AND :until
+            OR (price.source = :weeklySource AND price.referenceDate = (
+              SELECT MAX(edge.referenceDate) FROM FuelPrice edge
+              WHERE edge.region = price.region AND edge.fuel = price.fuel AND edge.source = price.source
+                AND edge.referenceDate >= :weeklyFrom AND edge.referenceDate < :from
+            )))
         ORDER BY price.referenceDate, region.okatoCode, price.source
     """)
     fun findPageRows(
         @Param("regions") regions: List<String>,
         @Param("fuel") fuel: FuelType,
         @Param("from") from: LocalDate,
-        @Param("until") until: LocalDate
+        @Param("until") until: LocalDate,
+        @Param("weeklyFrom") weeklyFrom: LocalDate,
+        @Param("weeklySource") weeklySource: PriceSource
     ): List<FuelPriceEntity>
 
     @Query("""

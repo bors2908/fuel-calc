@@ -46,6 +46,17 @@
   stroke-width: 2px;
 }
 
+.series .series-line {
+  pointer-events: none;
+}
+
+.series .series-hit {
+  stroke: transparent;
+  stroke-width: 14px;
+  stroke-linecap: round;
+  pointer-events: stroke;
+}
+
 .series-0 {
   --series-color: var(--region-color-0);
 }
@@ -62,7 +73,7 @@
   --series-color: var(--region-color-3);
 }
 
-.series[data-source="MARKET"] path {
+.series[data-source="MARKET"] .series-line {
   stroke-dasharray: 6 4;
 }
 
@@ -96,6 +107,10 @@
   border: 0;
   text-align: start;
   font-size: 0.875rem;
+}
+
+.legend-item[data-active="true"] {
+  background: var(--tint);
 }
 
 .legend-item small {

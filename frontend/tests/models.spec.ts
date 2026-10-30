@@ -6,7 +6,7 @@ import {
   selectionHref,
 } from "../src/selection/model";
 import { presentPrice, presentTrendPoint } from "../src/prices/presentation";
-import { prepareChart } from "../src/prices/chart/model";
+import { prepareChart, priceOnDate } from "../src/prices/chart/model";
 import { chartGeometry, seriesPath } from "../src/prices/chart/geometry";
 import { validatePriceRows } from "../src/prices/validate";
 
@@ -92,9 +92,10 @@ test("extracted chart geometry keeps gaps and a single observation", () => {
   }
   const coordinates = chartGeometry(model.prices, selection.dateFrom, selection.dateTo, 800);
   // The fixture has a missing official week between its two available points.
-  const path = seriesPath(series, coordinates);
+  const path = seriesPath(series, coordinates, selection.dateTo);
   expect(path.match(/M/g)).toHaveLength(2);
   expect(path).not.toContain("L");
+  expect(path.endsWith(`H${coordinates.x(selection.dateTo)} `)).toBe(true);
   const point = series.points.find((item) => item.priceRubPerLiter !== null);
   if (!point) {
     throw new Error("Missing history point");
@@ -105,7 +106,7 @@ test("extracted chart geometry keeps gaps and a single observation", () => {
   expect(enlarged.left).toBeGreaterThan(coordinates.left);
   expect(enlarged.right).toBeGreaterThan(coordinates.right);
   expect(Number.isFinite(single.y(Number(point.priceRubPerLiter)))).toBe(true);
-  expect(seriesPath({ ...series, points: [point] }, single)).toMatch(/^M[^L]+$/);
+  expect(seriesPath({ ...series, points: [point] }, single, point.date)).toMatch(/^M[^LH]+$/);
 });
 
 test("incomplete, duplicate and inconsistent rows fail before rendering", () => {
@@ -126,4 +127,46 @@ test("incomplete, duplicate and inconsistent rows fail before rendering", () => 
   }
   point.observationId = null;
   expect(() => validatePriceRows(inconsistent)).toThrow();
+});
+
+test("weekly exact values cover their week without creating daily observations", () => {
+  const selected = { ...selection, dateFrom: "2026-10-19", dateTo: "2026-10-25" };
+  const value = pageResponse(selected);
+  const model = prepareChart(
+    value.context,
+    value.sources.OFFICIAL.trend,
+    value.sources.MARKET.trend,
+  );
+  const official = model.series.find((row) => row.source === "OFFICIAL");
+  if (!official) {
+    throw new Error("Missing official series");
+  }
+  expect(official.points).toHaveLength(1);
+  expect(official.points[0]?.date).toBe("2026-10-19");
+  expect(official.byDate.size).toBe(1);
+  expect(priceOnDate(official, "2026-10-20")).toMatchObject({
+    status: "available",
+    value: "72.50",
+    date: "2026-10-19",
+    source: "OFFICIAL",
+  });
+  expect(priceOnDate(official, "2026-10-25")?.status).toBe("available");
+  expect(priceOnDate(official, "2026-10-29")?.status).toBe("available");
+});
+
+test("a missing weekly observation stays missing for the whole week", () => {
+  const value = pageResponse();
+  const model = prepareChart(
+    value.context,
+    value.sources.OFFICIAL.trend,
+    value.sources.MARKET.trend,
+  );
+  const official = model.series.find((row) => row.source === "OFFICIAL");
+  if (!official) {
+    throw new Error("Missing official series");
+  }
+  expect(priceOnDate(official, "2026-10-11")?.status).toBe("available");
+  expect(priceOnDate(official, "2026-10-12")?.status).toBe("missing");
+  expect(priceOnDate(official, "2026-10-18")?.status).toBe("missing");
+  expect(priceOnDate(official, "2026-10-19")?.status).toBe("available");
 });

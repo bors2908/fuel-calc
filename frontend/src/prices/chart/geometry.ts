@@ -35,6 +35,7 @@ export function chartGeometry(
 export function seriesPath(
   series: ChartSeries,
   coordinates: Pick<ReturnType<typeof chartGeometry>, "x" | "y">,
+  until: string,
 ): string {
   let path = "";
   let previous: number | null = null;
@@ -48,6 +49,9 @@ export function seriesPath(
       path += `${connected ? "L" : "M"}${coordinates.x(point.date)},${coordinates.y(Number(point.priceRubPerLiter))} `;
       previous = time;
     }
+  }
+  if (series.source === "OFFICIAL" && previous !== null && previous < Date.parse(until)) {
+    path += `H${coordinates.x(until)} `;
   }
   return path;
 }
