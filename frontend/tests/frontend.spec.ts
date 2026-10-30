@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { apiError, mockApi, pageResponse, selection, selectionUrl, refuelingUrl } from "./fixtures";
+import {
+  apiError,
+  mockApi,
+  pageResponse,
+  selection,
+  selectionUrl,
+  refuelingUrl,
+  meta,
+} from "./fixtures";
 import { normalizeVolume } from "../src/refueling/model";
 import { presetRange } from "../src/selection/dates";
 
@@ -19,6 +27,65 @@ test("page makes one request for both sources without revision preconditions", a
   );
   await expect(page.locator(".overview")).toContainText("72,50");
   await expect(page.locator(".overview")).toContainText("73,50");
+});
+
+test("weekly forecasts are translucent, labelled and have no observation links", async ({
+  page,
+}) => {
+  await mockApi(page);
+  await page.route("**/api/v1/fuel-prices?**", (route) => {
+    const value = pageResponse({ ...selection, dateTo: "2026-11-09" });
+    for (const source of ["OFFICIAL", "MARKET"] as const) {
+      for (const row of value.sources[source].trend) {
+        for (const date of ["2026-11-02", "2026-11-09"]) {
+          row.points.push({
+            kind: "FORECAST",
+            date,
+            priceRubPerLiter: "80.00",
+            observationId: null,
+            missingReason: null,
+            forecast: {
+              asOfDate: meta.serverDate,
+              baseDate: "2026-10-19",
+              basePriceRubPerLiter: "72.50",
+              historicalYears: [2025, 2024],
+              growthPercent: "10.000000",
+              historySource: "OFFICIAL",
+              method: "HISTORICAL_RELATIVE_CHANGE",
+            },
+          });
+        }
+      }
+    }
+    return route.fulfill({ json: value });
+  });
+  await page.goto(selectionUrl.replace("to=2026-10-29", "to=2026-11-09"));
+  const line = page.locator(
+    '.chart .series[data-region="23000000000"][data-source="MARKET"] .forecast-line',
+  );
+  await expect(line).toHaveAttribute("d", /L/);
+  await expect(line).toHaveCSS("opacity", "0.5");
+  await expect(page.locator(".forecast-boundary")).toContainText("Прогноз");
+  await page
+    .getByLabel("Дата на графике — точные значения", { exact: true })
+    .selectOption("2026-11-09");
+  await expect(page.locator(".chart-detail")).toContainText("прогноз на неделю");
+  await expect(page.locator(".chart-detail button")).toHaveCount(0);
+  await page.getByRole("button", { name: "Таблица", exact: true }).click();
+  await expect(page.locator("#trend tbody")).toContainText("Прогноз");
+  await expect(page.locator(".chart-note").last()).toContainText(
+    "фактическая цена может отличаться",
+  );
+});
+
+test("a date beyond the forecast year never requests prices", async ({ page }) => {
+  const requests = await mockApi(page);
+  await page.goto(selectionUrl);
+  await expect(page.locator(".chart .series")).toHaveCount(6);
+  const before = requests.length;
+  await page.getByLabel("По дату", { exact: true }).fill("2027-10-30");
+  await expect(page.getByRole("alert")).toContainText("максимум на год");
+  expect(requests.length).toBe(before);
 });
 
 test("all regions have both source styles and exact original dates", async ({ page }) => {
@@ -54,6 +121,20 @@ test("all regions have both source styles and exact original dates", async ({ pa
   await expect(rostov.locator('[data-source="OFFICIAL"]')).toContainText("19 окт.");
   await page.getByRole("button", { name: "Таблица", exact: true }).click();
   await expect(page.locator('#trend th[scope="colgroup"]')).toHaveCount(3);
+  const rows = page.locator("#trend tbody tr");
+  await expect(rows).toHaveCount(7);
+  const dailyRow = rows.filter({ has: page.getByRole("rowheader", { name: /20 окт\./ }) });
+  const weeklyPrice = dailyRow.locator('td[data-region="61000000000"][data-source="OFFICIAL"]');
+  await expect(weeklyPrice).toContainText("71,80");
+  await expect(weeklyPrice).toContainText("19 окт.");
+  const missingWeek = rows.filter({ has: page.getByRole("rowheader", { name: /17 окт\./ }) });
+  await expect(
+    missingWeek.locator('td[data-region="61000000000"][data-source="OFFICIAL"]'),
+  ).toHaveText("—");
+  const missingDay = rows.filter({ has: page.getByRole("rowheader", { name: /19 окт\./ }) });
+  await expect(
+    missingDay.locator('td[data-region="61000000000"][data-source="MARKET"]'),
+  ).toHaveText("—");
   expect(requests.length).toBe(count);
 });
 

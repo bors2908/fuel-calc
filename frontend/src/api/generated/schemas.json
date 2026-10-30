@@ -259,8 +259,59 @@
       "type": "string",
       "enum": [
         "NO_DATA_IN_RANGE",
-        "NO_OBSERVATION_FOR_PERIOD"
+        "NO_OBSERVATION_FOR_PERIOD",
+        "INSUFFICIENT_HISTORY"
       ]
+    },
+    "ForecastBasis": {
+      "type": "object",
+      "required": [
+        "asOfDate",
+        "baseDate",
+        "basePriceRubPerLiter",
+        "historicalYears",
+        "growthPercent",
+        "historySource",
+        "method"
+      ],
+      "properties": {
+        "asOfDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "baseDate": {
+          "type": "string",
+          "format": "date"
+        },
+        "basePriceRubPerLiter": {
+          "$ref": "#/definitions/DecimalString"
+        },
+        "historicalYears": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "growthPercent": {
+          "type": "string"
+        },
+        "historySource": {
+          "type": "string",
+          "enum": [
+            "OFFICIAL"
+          ]
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "HISTORICAL_RELATIVE_CHANGE"
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "AvailablePriceCell": {
       "required": [
@@ -277,6 +328,7 @@
         },
         "observationId": {
           "type": "string",
+          "nullable": true,
           "minLength": 1
         },
         "period": {
@@ -284,6 +336,9 @@
         },
         "source": {
           "$ref": "#/definitions/PriceSource"
+        },
+        "forecast": {
+          "$ref": "#/definitions/ForecastBasis"
         },
         "missingReason": {
           "type": "string",
@@ -854,12 +909,24 @@
     "TrendPoint": {
       "type": "object",
       "required": [
+        "kind",
         "date",
         "priceRubPerLiter",
         "observationId",
         "missingReason"
       ],
       "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "OBSERVED",
+            "FORECAST"
+          ],
+          "default": "OBSERVED"
+        },
+        "forecast": {
+          "$ref": "#/definitions/ForecastBasis"
+        },
         "date": {
           "type": "string",
           "format": "date"
@@ -877,6 +944,7 @@
           "enum": [
             "NO_DATA_IN_RANGE",
             "NO_OBSERVATION_FOR_PERIOD",
+            "INSUFFICIENT_HISTORY",
             null
           ]
         }

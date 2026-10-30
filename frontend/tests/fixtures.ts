@@ -131,6 +131,7 @@ export function response(
               const absent = day === (source === "OFFICIAL" ? "2026-10-12" : "2026-10-19");
               const p = price(region.okatoCode, source);
               return {
+                kind: "OBSERVED",
                 date: day,
                 priceRubPerLiter: absent ? null : p.priceRubPerLiter,
                 observationId: absent ? null : p.observationId,

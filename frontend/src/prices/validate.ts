@@ -27,7 +27,17 @@ export function validatePriceRows(page: Schema<"PricePage">) {
         throw new Error("Duplicate history date");
       }
       for (const point of row.points) {
-        if ((point.priceRubPerLiter === null) !== (point.observationId === null)) {
+        if (point.kind === "FORECAST") {
+          if (
+            point.observationId !== null ||
+            (point.priceRubPerLiter !== null && !point.forecast)
+          ) {
+            throw new Error("Inconsistent forecast point");
+          }
+        } else if (
+          (point.priceRubPerLiter === null) !== (point.observationId === null) ||
+          point.forecast
+        ) {
           throw new Error("Inconsistent history observation");
         }
       }

@@ -26,7 +26,7 @@ class ImportProperties {
 
         var goodsSetId: Long = 108929
 
-        var startDate: LocalDate = LocalDate.of(2026, 1, 1)
+        var startDate: LocalDate = LocalDate.of(2023, 1, 1)
 
         var cron: String = "0 0 0 * * *"
 
@@ -45,7 +45,7 @@ class ImportProperties {
 
         var dataset: String = "fedstat/indicator_37426"
 
-        var startDate: LocalDate = LocalDate.of(2026, 1, 1)
+        var startDate: LocalDate = LocalDate.of(2023, 1, 1)
 
         var token: String = ""
 

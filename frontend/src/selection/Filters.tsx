@@ -5,6 +5,7 @@ import { RegionSelect } from "./RegionSelect";
 import { FuelSelector } from "./FuelSelector";
 import { DateField, DateRangeFields, PeriodPreset } from "./DateControls";
 import { AdditionalRegions } from "./AdditionalRegions";
+import { forecastLimit } from "./dates";
 import "./filters.css";
 
 type Props = { catalog: Catalog; error: string | null } & (
@@ -61,7 +62,7 @@ export function Filters(props: Props) {
           <DateField
             label="Дата заправки"
             value={props.value.date}
-            max={catalog.serverDate}
+            max={forecastLimit(catalog.serverDate)}
             {...(error ? { errorId } : {})}
             onChange={(date) => props.onChange({ ...props.value, date })}
           />

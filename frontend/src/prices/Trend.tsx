@@ -13,13 +13,16 @@ type Props = {
   market: Schema<"RegionPriceSeries">[];
   official: Schema<"RegionPriceSeries">[];
   onObservation: (id: string) => void;
+  serverDate: string;
 };
-export function Trend({ context, market, official, onObservation }: Props) {
+export function Trend({ context, market, official, onObservation, serverDate }: Props) {
   const [view, setView] = useState<"chart" | "table">("chart");
   const [activeSeries, setActiveSeries] = useState<string | null>(null);
   const [active, setActive] = useState("");
   const model = prepareChart(context, official, market);
-  const selectedDate = model.dates.includes(active) ? active : (model.dates.at(-1) ?? "");
+  const selectedDate = model.detailDates.includes(active)
+    ? active
+    : (model.detailDates.at(-1) ?? "");
   return (
     <section
       id="trend"
@@ -58,7 +61,11 @@ export function Trend({ context, market, official, onObservation }: Props) {
         onActivate={setActiveSeries}
       />
       {model.prices.length === 0 ? (
-        <p className="empty-state">В выбранном диапазоне нет истории. Попробуйте другой период.</p>
+        <p className="empty-state">
+          {context.dateTo > serverDate
+            ? "Недостаточно официальной истории или текущих цен для прогноза. Попробуйте другой период."
+            : "В выбранном диапазоне нет истории. Попробуйте другой период."}
+        </p>
       ) : (
         <>
           {view === "chart" ? (
@@ -72,11 +79,12 @@ export function Trend({ context, market, official, onObservation }: Props) {
                 onSelect={setActive}
                 activeSeries={activeSeries}
                 onActivate={setActiveSeries}
+                serverDate={serverDate}
               />
               <ChartDetails
                 groups={model.groups}
                 baseRegionCode={context.baseRegion.okatoCode}
-                dates={model.dates}
+                dates={model.detailDates}
                 selectedDate={selectedDate}
                 onSelect={setActive}
                 onObservation={onObservation}
@@ -94,11 +102,20 @@ export function Trend({ context, market, official, onObservation }: Props) {
             />
           )}
           <p className="muted chart-note">
-            Каждый кружок — сохранённое наблюдение на указанную дату. Недельная цена действует семь
-            дней, а последний замер продолжается до конца выбранного периода. Наведите на линию или
-            её легенду, чтобы показать кружки; легенда также доступна с клавиатуры. Разрыв означает
-            отсутствие данных.
+            Кружки обозначают наблюдения на исходных датах и явно отмеченные прогнозные точки.
+            Недельная цена действует семь дней; последняя продолжается до конца выбранной
+            фактической части. Наведите на линию или её легенду, чтобы показать кружки; легенда
+            также доступна с клавиатуры. Разрыв означает отсутствие данных.
           </p>
+          {context.dateTo > serverDate && (
+            <p className="muted chart-note">
+              Полупрозрачные линии — прогноз по сезонной исторической динамике Росстата,
+              рассчитанный на текущую дату. Чем дальше горизонт и резче изменения рынка, тем выше
+              неопределённость. Это оценка для планирования; фактическая цена может отличаться. При
+              недостатке истории соседние доступные точки соединяются прямым отрезком; новые
+              прогнозные точки при этом не создаются.
+            </p>
+          )}
         </>
       )}
     </section>

@@ -73,8 +73,8 @@ class PriceSelectionValidator(private val repository: RegionRepository) {
             throw ApiException.invalid(fields.from, "INVALID_DATE_RANGE", "Начало периода позже окончания")
         }
 
-        if (until > serverDate) {
-            throw ApiException.invalid(fields.until, "FUTURE_DATE", "Дата не должна быть в будущем")
+        if (until > serverDate.plusYears(1)) {
+            throw ApiException.invalid(fields.until, "FORECAST_HORIZON_EXCEEDED", "Прогноз доступен максимум на один год вперёд")
         }
 
         val selected = regions(codes, fields.regions)

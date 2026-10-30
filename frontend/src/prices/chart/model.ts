@@ -55,10 +55,24 @@ export function prepareChart(
       point.priceRubPerLiter === null ? [] : [Number(point.priceRubPerLiter)],
     ),
   );
+  const detailDates = [
+    ...new Set([
+      ...dates,
+      ...[context.dateFrom, context.dateTo].filter((day) =>
+        series.some((item) => {
+          const point = latestPoint(item.points, day);
+          return (
+            point?.kind === "FORECAST" && Date.parse(day) - Date.parse(point.date) < 7 * 86_400_000
+          );
+        }),
+      ),
+    ]),
+  ].sort();
   return {
     groups,
     series,
     dates,
+    detailDates,
     prices,
     regionNames: context.regions.map((region) => region.name).join(", "),
   };
@@ -66,24 +80,32 @@ export function prepareChart(
 
 export function priceOnDate(series: ChartSeries, day: string): PresentedPrice | undefined {
   const exact = series.byDate.get(day);
-  if (exact || series.source !== "OFFICIAL") {
+  if (exact) {
     return exact;
   }
   const selected = Date.parse(`${day}T00:00:00Z`);
-  const latest = series.points.reduce<Schema<"TrendPoint"> | undefined>((current, candidate) => {
-    return !current || candidate.date > current.date ? candidate : current;
-  }, undefined);
-  const point = series.points.reduce<Schema<"TrendPoint"> | undefined>((current, candidate) => {
-    return candidate.date <= day && (!current || candidate.date > current.date)
-      ? candidate
-      : current;
-  }, undefined);
+  const latest = latestPoint(series.points);
+  const point = latestPoint(series.points, day);
   if (!point) {
     return undefined;
   }
   const age = (selected - Date.parse(`${point.date}T00:00:00Z`)) / 86_400_000;
+  if (point.kind === "FORECAST") {
+    return age < 7 ? presentTrendPoint(point, series.source) : undefined;
+  }
+  if (series.source !== "OFFICIAL") {
+    return undefined;
+  }
   const isLastAvailable = point.date === latest?.date && point.priceRubPerLiter !== null;
   return age < sourceInfo.OFFICIAL.intervalDays || isLastAvailable
     ? presentTrendPoint(point, series.source)
     : undefined;
+}
+
+function latestPoint(points: Schema<"TrendPoint">[], until?: string) {
+  return points.reduce<Schema<"TrendPoint"> | undefined>((latest, point) => {
+    return (!until || point.date <= until) && (!latest || point.date > latest.date)
+      ? point
+      : latest;
+  }, undefined);
 }

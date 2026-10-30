@@ -25,17 +25,29 @@ export function ComparisonPrice({
   const price = row.price;
   return (
     <div className="comparison-cell-value">
-      <ObservationButton
-        id={price.observationId}
-        onObservation={onObservation}
-        className="comparison-price"
-        label={`${sourceTitle} цена: ${number(price.priceRubPerLiter)} ₽/л, ${row.region.name}. Об источнике и дате`}
-      >
-        <Amount
-          value={price.priceRubPerLiter}
-          unit="₽/л"
-        />
-      </ObservationButton>
+      {price.observationId ? (
+        <ObservationButton
+          id={price.observationId}
+          onObservation={onObservation}
+          className="comparison-price"
+          label={`${sourceTitle} цена: ${number(price.priceRubPerLiter)} ₽/л, ${row.region.name}. Об источнике и дате`}
+        >
+          <Amount
+            value={price.priceRubPerLiter}
+            unit="₽/л"
+          />
+        </ObservationButton>
+      ) : (
+        <strong className="comparison-price">
+          <Amount
+            value={price.priceRubPerLiter}
+            unit="₽/л"
+          />
+        </strong>
+      )}
+      {price.forecast && (
+        <small>Прогноз · динамика Росстата · база {date(price.forecast.baseDate)}</small>
+      )}
       {price.period.referenceDate !== commonDate && (
         <small className="comparison-date">{date(price.period.referenceDate)}</small>
       )}

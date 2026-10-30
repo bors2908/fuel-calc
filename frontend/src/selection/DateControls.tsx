@@ -1,6 +1,6 @@
 import { useId } from "react";
 import type { PriceSelection } from "./types";
-import { presetRange } from "./dates";
+import { forecastLimit, presetRange } from "./dates";
 
 type DateProps = {
   label: string;
@@ -48,9 +48,18 @@ export function PeriodPreset({
       <label htmlFor={id}>Период</label>
       <select
         id={id}
-        value={preset?.toString() ?? "custom"}
+        value={
+          value.dateFrom === serverDate && value.dateTo === forecastLimit(serverDate)
+            ? "forecast"
+            : (preset?.toString() ?? "custom")
+        }
         onChange={(event) =>
-          onChange({ ...value, ...presetRange(serverDate, Number(event.target.value)) })
+          onChange({
+            ...value,
+            ...(event.target.value === "forecast"
+              ? { dateFrom: serverDate, dateTo: forecastLimit(serverDate) }
+              : presetRange(serverDate, Number(event.target.value))),
+          })
         }
       >
         <option
@@ -62,6 +71,7 @@ export function PeriodPreset({
         <option value="1">1 месяц</option>
         <option value="3">3 месяца</option>
         <option value="12">Год</option>
+        <option value="forecast">Прогноз на год</option>
       </select>
     </div>
   );
@@ -82,7 +92,7 @@ export function DateRangeFields({
       <DateField
         label="С даты"
         value={value.dateFrom}
-        max={serverDate}
+        max={forecastLimit(serverDate)}
         {...(errorId ? { errorId } : {})}
         onChange={(dateFrom) => onChange({ ...value, dateFrom })}
       />
@@ -91,7 +101,7 @@ export function DateRangeFields({
         label="По дату"
         value={value.dateTo}
         min={value.dateFrom}
-        max={serverDate}
+        max={forecastLimit(serverDate)}
         {...(errorId ? { errorId } : {})}
         onChange={(dateTo) => onChange({ ...value, dateTo })}
       />

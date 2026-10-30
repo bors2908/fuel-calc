@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { ChartSeries } from "./model";
-import { chartGeometry, seriesPath } from "./geometry";
+import { chartGeometry, forecastSeriesPath, seriesPath } from "./geometry";
 import { date, number } from "../../ui/format";
 import { sourceInfo } from "../../sources/model";
 export function PriceChart({
@@ -12,6 +12,7 @@ export function PriceChart({
   onSelect,
   activeSeries,
   onActivate,
+  serverDate,
 }: {
   series: ChartSeries[];
   prices: number[];
@@ -21,6 +22,7 @@ export function PriceChart({
   onSelect: (date: string) => void;
   activeSeries: string | null;
   onActivate: (key: string | null) => void;
+  serverDate: string;
 }) {
   const id = useId();
   const chart = useRef<HTMLDivElement>(null);
@@ -94,7 +96,13 @@ export function PriceChart({
           );
         })}
         {series.map((item) => {
-          const path = seriesPath(item, { x, y }, to);
+          const actual = item.points.filter((point) => point.kind !== "FORECAST");
+          const path = seriesPath(
+            { ...item, points: actual },
+            { x, y },
+            to < serverDate ? to : serverDate,
+          );
+          const forecastPath = forecastSeriesPath(item, { x, y }, from, to, serverDate);
           return (
             <g
               key={item.key}
@@ -110,9 +118,14 @@ export function PriceChart({
                 d={path}
               />
               <path
+                className="forecast-line"
+                d={forecastPath}
+              />
+              <path
                 className="series-hit"
                 d={
                   path +
+                  forecastPath +
                   item.points
                     .flatMap((point) =>
                       point.priceRubPerLiter !== null
@@ -134,12 +147,14 @@ export function PriceChart({
                       cx={x(point.date)}
                       cy={y(Number(point.priceRubPerLiter))}
                       r={item.source === "OFFICIAL" ? 5 : 3.5}
+                      data-forecast={point.kind === "FORECAST"}
                       onPointerEnter={() => onSelect(point.date)}
                       onPointerDown={() => onSelect(point.date)}
                     >
                       <title>
                         {item.region.name} · {sourceInfo[item.source].name} · {date(point.date)} ·{" "}
                         {number(point.priceRubPerLiter)} ₽/л
+                        {point.kind === "FORECAST" && " · прогноз"}
                       </title>
                     </circle>
                   );
@@ -147,6 +162,22 @@ export function PriceChart({
             </g>
           );
         })}
+        {from <= serverDate && to > serverDate && (
+          <g className="forecast-boundary">
+            <line
+              x1={x(serverDate)}
+              x2={x(serverDate)}
+              y1={30}
+              y2={260}
+            />
+            <text
+              x={Math.max(left, Math.min(x(serverDate) + 5, width - right - 100))}
+              y={30}
+            >
+              Прогноз →
+            </text>
+          </g>
+        )}
         {axisDates.map((day) => (
           <text
             key={day}

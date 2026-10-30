@@ -194,7 +194,7 @@ export interface components {
             [key: string]: components["schemas"]["SourceUpdate"];
         };
         /**
-         * @description WEEKLY доступна для OFFICIAL, DAILY — для MARKET. Несовместимая пара source/frequency возвращает 400.
+         * @description Наблюдения OFFICIAL — WEEKLY, MARKET — DAILY. Прогнозы обоих источников — WEEKLY.
          * @enum {string}
          */
         Frequency: "DAILY" | "WEEKLY";
@@ -208,13 +208,28 @@ export interface components {
             referenceDate: string;
         };
         /** @enum {string} */
-        MissingPriceReason: "NO_DATA_IN_RANGE" | "NO_OBSERVATION_FOR_PERIOD";
-        /** @description Доступная цена с кратким происхождением; missingReason всегда null. Состояние потока находится в sourceUpdates, последняя доступная дата — на уровне ряда, строки или сводки. */
+        MissingPriceReason: "NO_DATA_IN_RANGE" | "NO_OBSERVATION_FOR_PERIOD" | "INSUFFICIENT_HISTORY";
+        /** @description Прогноз по среднему относительному изменению официальных цен за сопоставимые периоды 1–3 лет назад. Один коэффициент применяется к отдельным последним фактическим ценам OFFICIAL и MARKET. Вычисляется без сохранения. historicalYears содержит годы начала аналогов; состав доступных аналогов может различаться между неделями. */
+        ForecastBasis: {
+            /** Format: date */
+            asOfDate: string;
+            /** Format: date */
+            baseDate: string;
+            basePriceRubPerLiter: components["schemas"]["DecimalString"];
+            historicalYears: number[];
+            growthPercent: string;
+            /** @enum {string} */
+            historySource: "OFFICIAL";
+            /** @enum {string} */
+            method: "HISTORICAL_RELATIVE_CHANGE";
+        };
+        /** @description Доступная цена с кратким происхождением; missingReason всегда null. Состояние потока находится в sourceUpdates, последняя доступная дата — на уровне ряда, строки или сводки. У наблюдения observationId заполнен, forecast отсутствует; у прогноза observationId равен null, forecast обязателен, периодичность WEEKLY. */
         AvailablePriceCell: {
             priceRubPerLiter: components["schemas"]["DecimalString"];
-            observationId: string;
+            observationId: string | null;
             period: components["schemas"]["PricePeriod"];
             source: components["schemas"]["PriceSource"];
+            forecast?: components["schemas"]["ForecastBasis"];
             /** @enum {string|null} */
             missingReason: null;
         };
@@ -311,7 +326,7 @@ export interface components {
             observation: components["schemas"]["PriceObservation"];
             sourceUpdates: components["schemas"]["SourceUpdates"];
         };
-        /** @description Регионы, топливо и дата для обоих расчётов. Используется последняя общая цена не позднее date; date <= serverDate. Источник и периодичность определяются сервером. */
+        /** @description Регионы, топливо и дата для обоих расчётов. Историческая дата использует последнюю общую цену не позднее date. Будущая дата использует прогноз соответствующей недели для обоих источников. Максимум serverDate плюс один календарный год. */
         RefuelingSelection: {
             baseRegionCode: components["schemas"]["RegionCode"];
             regionCodes: components["schemas"]["RegionCode"][];
@@ -401,12 +416,19 @@ export interface components {
         };
         /** @description Исходная дата сохранённого наблюдения. Для недельной цены это начало семидневного периода; дата может предшествовать началу выбранного диапазона до 6 дней. Отсутствующая цена не заменяется нулём. */
         TrendPoint: {
+            /**
+             * @description OBSERVED — исходное наблюдение; FORECAST — недельный прогноз, observationId всегда null.
+             * @default OBSERVED
+             * @enum {string}
+             */
+            kind: "OBSERVED" | "FORECAST";
+            forecast?: components["schemas"]["ForecastBasis"];
             /** Format: date */
             date: string;
             priceRubPerLiter: components["schemas"]["NullableDecimalString"];
             observationId: string | null;
             /** @enum {string|null} */
-            missingReason: "NO_DATA_IN_RANGE" | "NO_OBSERVATION_FOR_PERIOD" | null;
+            missingReason: "NO_DATA_IN_RANGE" | "NO_OBSERVATION_FOR_PERIOD" | "INSUFFICIENT_HISTORY" | null;
         };
         /** @description Общий выбор регионов, топлива и дат для обоих источников. */
         PricePageContext: {
@@ -418,6 +440,7 @@ export interface components {
             /** Format: date */
             dateTo: string;
         };
+        /** @description frequency описывает сохранённые наблюдения источника. Прогнозные точки обоих источников всегда недельные, помечены kind=FORECAST и рассчитаны при запросе. Сводка и сравнение для будущего диапазона относятся к его последней неделе. */
         PriceSourcePage: {
             frequency: components["schemas"]["Frequency"];
             overview: components["schemas"]["PriceOverview"];
@@ -486,7 +509,7 @@ export interface components {
         FilterFuelType: components["schemas"]["FuelType"];
         /** @description Включительная нижняя граница диапазона дней в формате YYYY-MM-DD; не позже filterDateTo. Недельные наблюдения включаются при пересечении их семидневного периода с диапазоном; referenceDate может быть раньше на 6 дней. */
         FilterDateFrom: string;
-        /** @description Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
+        /** @description Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate плюс один календарный год (Europe/Moscow). Будущие цены вычисляются при запросе по официальным историческим аналогам за 1–3 года. */
         FilterDateTo: string;
         /** @description Частота итоговых наблюдений: дни, недели или месяцы. BenzUp: среднее замеров региона за день; завершённые недели и месяцы — среднее доступных дневных значений с равным весом дней. */
         Frequency: components["schemas"]["Frequency"];
@@ -620,7 +643,7 @@ export interface operations {
                 filterFuelType: components["parameters"]["FilterFuelType"];
                 /** @description Включительная нижняя граница диапазона дней в формате YYYY-MM-DD; не позже filterDateTo. Недельные наблюдения включаются при пересечении их семидневного периода с диапазоном; referenceDate может быть раньше на 6 дней. */
                 filterDateFrom: components["parameters"]["FilterDateFrom"];
-                /** @description Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate из ответа API (Europe/Moscow). */
+                /** @description Включительная верхняя граница диапазона дней в формате YYYY-MM-DD, не раньше filterDateFrom и не позже meta.serverDate плюс один календарный год (Europe/Moscow). Будущие цены вычисляются при запросе по официальным историческим аналогам за 1–3 года. */
                 filterDateTo: components["parameters"]["FilterDateTo"];
                 /** @description Источник, по которому упорядочиваются регионы; по умолчанию OFFICIAL. */
                 sortSource?: components["schemas"]["PriceSource"];

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component
 @Component
 class PriceCellConverter {
     fun available(row: PriceRow): AvailablePriceCellDto =
-        AvailablePriceCellDto(row.price.toPlainString(), row.id.toString(), PricePeriodDto(row.period), row.source)
+        AvailablePriceCellDto(row.price.toPlainString(), row.id?.toString(), PricePeriodDto(row.period), row.source, row.forecast)
 
     fun missing(): MissingPriceCellDto =
         MissingPriceCellDto(MissingPriceReason.NO_DATA_IN_RANGE)

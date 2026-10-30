@@ -1,4 +1,5 @@
 import type { ChartGroup, ChartSeries } from "./model";
+import { priceOnDate } from "./model";
 import { date } from "../../ui/format";
 import { sourceInfo } from "../../sources/model";
 import { PriceValue } from "../PriceValue";
@@ -28,7 +29,7 @@ export function HistoryTable({
     >
       <table>
         <caption>
-          {regionNames} · {fuelName}, ₽/л. «—» — нет наблюдения на эту дату.
+          {regionNames} · {fuelName}, ₽/л. «—» — нет действующей цены на эту дату.
         </caption>
         <colgroup span={1} />
         {groups.map((group) => (
@@ -72,7 +73,7 @@ export function HistoryTable({
             <tr key={day}>
               <th scope="row">{date(day)}</th>
               {series.map((item) => {
-                const point = item.byDate.get(day);
+                const point = priceOnDate(item, day);
                 return (
                   <td
                     key={item.key}

@@ -1,4 +1,4 @@
-import { presetRange, validDate } from "./dates";
+import { forecastLimit, presetRange, validDate } from "./dates";
 import type {
   BaseSelection,
   Catalog,
@@ -81,8 +81,8 @@ export const priceSelectionModel: SelectionModel<PriceSelection> = {
       (!validDate(value.dateFrom) ||
       !validDate(value.dateTo) ||
       value.dateFrom > value.dateTo ||
-      value.dateTo > catalog.serverDate
-        ? "Укажите корректный период без будущих дат."
+      value.dateTo > forecastLimit(catalog.serverDate)
+        ? "Укажите корректный период: прогноз доступен максимум на год вперёд."
         : null)
     );
   },
@@ -100,8 +100,8 @@ export const refuelingSelectionModel: SelectionModel<RefuelingSelection> = {
   validate(value, catalog) {
     return (
       baseSelectionError(value, catalog) ??
-      (!validDate(value.date) || value.date > catalog.serverDate
-        ? "Укажите корректную дату не позднее сегодняшней."
+      (!validDate(value.date) || value.date > forecastLimit(catalog.serverDate)
+        ? "Укажите корректную дату: прогноз доступен максимум на год вперёд."
         : null)
     );
   },

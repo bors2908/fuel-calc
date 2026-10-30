@@ -1,12 +1,13 @@
 package ge.becrin.fuelcalc.prices.model
 
 import ge.becrin.fuelcalc.fuels.FuelType
+import ge.becrin.fuelcalc.prices.forecast.ForecastBasis
 import ge.becrin.fuelcalc.regions.model.Region
 import ge.becrin.fuelcalc.sources.PriceSource
 import java.math.BigDecimal
 
 data class PriceRow(
-    val id: Long,
+    val id: Long?,
 
     val region: Region,
 
@@ -16,5 +17,7 @@ data class PriceRow(
 
     val price: BigDecimal,
 
-    val source: PriceSource
+    val source: PriceSource,
+
+    val forecast: ForecastBasis? = null
 )

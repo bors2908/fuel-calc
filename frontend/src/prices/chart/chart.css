@@ -50,6 +50,20 @@
   pointer-events: none;
 }
 
+.series .forecast-line {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.series circle[data-forecast="true"] {
+  opacity: 0.5;
+}
+
+.forecast-boundary line {
+  stroke: var(--muted);
+  stroke-dasharray: 3 5;
+}
+
 .series .series-hit {
   stroke: transparent;
   stroke-width: 14px;
@@ -73,7 +87,8 @@
   --series-color: var(--region-color-3);
 }
 
-.series[data-source="MARKET"] .series-line {
+.series[data-source="MARKET"] .series-line,
+.series[data-source="MARKET"] .forecast-line {
   stroke-dasharray: 6 4;
 }
 

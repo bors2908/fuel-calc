@@ -1,5 +1,15 @@
 import type { PriceSelection } from "./types";
 
+export function forecastLimit(serverDate: string): string {
+  const date = new Date(`${serverDate}T00:00:00Z`);
+  const month = date.getUTCMonth();
+  date.setUTCFullYear(date.getUTCFullYear() + 1);
+  if (date.getUTCMonth() !== month) {
+    date.setUTCDate(0);
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 export function presetRange(
   serverDate: string,
   months: number,

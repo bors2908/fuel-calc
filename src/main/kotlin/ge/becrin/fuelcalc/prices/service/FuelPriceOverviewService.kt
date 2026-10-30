@@ -5,6 +5,7 @@ import ge.becrin.fuelcalc.prices.dto.PriceChangeDto
 import ge.becrin.fuelcalc.prices.dto.PriceOverviewDto
 import ge.becrin.fuelcalc.prices.model.ComparisonAnalysis
 import ge.becrin.fuelcalc.prices.model.PriceReadContext
+import ge.becrin.fuelcalc.prices.model.PriceRow
 import ge.becrin.fuelcalc.prices.model.SourcePriceRows
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -19,11 +20,11 @@ class FuelPriceOverviewService(
     fun build(
         context: PriceReadContext,
         rows: SourcePriceRows,
-        analysis: ComparisonAnalysis
+        analysis: ComparisonAnalysis,
+        last: PriceRow? = rows.byRegion[context.selection.base.okatoCode]?.lastOrNull()
     ): PriceOverviewDto {
         val base = rows.byRegion[context.selection.base.okatoCode].orEmpty()
         val first = base.firstOrNull()
-        val last = base.lastOrNull()
         val firstCell = first?.let { cells.available(it) } ?: cells.missing()
         val lastCell = last?.let { cells.available(it) } ?: cells.missing()
         val enough = first != null && last != null && first.period.key != last.period.key

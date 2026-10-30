@@ -7,10 +7,26 @@ import {
 } from "../src/selection/model";
 import { presentPrice, presentTrendPoint } from "../src/prices/presentation";
 import { prepareChart, priceOnDate } from "../src/prices/chart/model";
-import { chartGeometry, seriesPath } from "../src/prices/chart/geometry";
+import { chartGeometry, forecastSeriesPath, seriesPath } from "../src/prices/chart/geometry";
 import { validatePriceRows } from "../src/prices/validate";
+import { forecastLimit } from "../src/selection/dates";
 
 const catalog = { regions, fuels, serverDate: meta.serverDate };
+
+test("future dates are allowed through one calendar year, including leap-day clamping", () => {
+  expect(forecastLimit("2024-02-29")).toBe("2025-02-28");
+  expect(priceSelectionModel.validate({ ...selection, dateTo: "2027-10-29" }, catalog)).toBeNull();
+  expect(
+    priceSelectionModel.validate({ ...selection, dateTo: "2027-10-30" }, catalog),
+  ).not.toBeNull();
+  const base = {
+    baseRegionCode: selection.baseRegionCode,
+    regionCodes: selection.regionCodes,
+    fuelType: selection.fuelType,
+  };
+  expect(refuelingSelectionModel.validate({ ...base, date: "2027-10-29" }, catalog)).toBeNull();
+  expect(refuelingSelectionModel.validate({ ...base, date: "2027-10-30" }, catalog)).not.toBeNull();
+});
 
 test("selection links round-trip and convert only dates when switching pages", () => {
   const priceQuery = new URL(selectionHref(selection, "/"), "http://localhost").searchParams;
@@ -44,7 +60,7 @@ test("invalid links are reported rather than silently loading default data", () 
     ["fuel", "UNKNOWN"],
     ["regions", "23000000000,23000000000"],
     ["from", "2026-02-30"],
-    ["to", "2027-01-01"],
+    ["to", "2028-01-01"],
   ]) {
     if (key === undefined || value === undefined) {
       throw new Error("Missing test parameter");
@@ -69,6 +85,7 @@ test("price presentation preserves decimal strings, identities and missing value
   expect(
     presentTrendPoint(
       {
+        kind: "OBSERVED",
         date: "2026-10-20",
         priceRubPerLiter: null,
         observationId: null,
@@ -127,6 +144,73 @@ test("incomplete, duplicate and inconsistent rows fail before rendering", () => 
   }
   point.observationId = null;
   expect(() => validatePriceRows(inconsistent)).toThrow();
+});
+
+test("forecast lines connect available neighbours across gaps without adding observations", () => {
+  const value = pageResponse();
+  const model = prepareChart(
+    value.context,
+    value.sources.OFFICIAL.trend,
+    value.sources.MARKET.trend,
+  );
+  const basis = {
+    asOfDate: "2026-10-29",
+    baseDate: "2026-10-19",
+    basePriceRubPerLiter: "72.50",
+    historicalYears: [2025],
+    growthPercent: "2.000000",
+    historySource: "OFFICIAL" as const,
+    method: "HISTORICAL_RELATIVE_CHANGE" as const,
+  };
+  for (const series of model.series) {
+    const predicted: typeof series.points = [
+      {
+        kind: "FORECAST",
+        date: "2026-10-30",
+        priceRubPerLiter: "74.00",
+        observationId: null,
+        missingReason: null,
+        forecast: basis,
+      },
+      {
+        kind: "FORECAST",
+        date: "2026-11-02",
+        priceRubPerLiter: null,
+        observationId: null,
+        missingReason: "INSUFFICIENT_HISTORY",
+      },
+      {
+        kind: "FORECAST",
+        date: "2026-11-09",
+        priceRubPerLiter: "76.00",
+        observationId: null,
+        missingReason: null,
+        forecast: basis,
+      },
+      {
+        kind: "FORECAST",
+        date: "2026-11-16",
+        priceRubPerLiter: null,
+        observationId: null,
+        missingReason: "INSUFFICIENT_HISTORY",
+      },
+    ];
+    const points = [...series.points, ...predicted];
+    const before = JSON.stringify(points);
+    const path = forecastSeriesPath(
+      { ...series, points },
+      {
+        x: (day) => (Date.parse(day) - Date.parse(basis.asOfDate)) / 86_400_000,
+        y: (price) => price,
+      },
+      basis.asOfDate,
+      "2026-11-22",
+      basis.asOfDate,
+    );
+    expect(path).toBe("M0,72.5 L1,74 L11,76 ");
+    expect(path.match(/M/g)).toHaveLength(1);
+    expect(JSON.stringify(points)).toBe(before);
+  }
 });
 
 test("weekly exact values cover their week without creating daily observations", () => {

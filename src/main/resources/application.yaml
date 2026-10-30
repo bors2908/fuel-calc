@@ -48,14 +48,14 @@ imports:
     base-url: ${ROSSTAT_BASE_URL:https://showdata.rosstat.gov.ru}
     indicator-id: 274422
     goods-set-id: 108929
-    start-date: ${ROSSTAT_START_DATE:2026-01-01}
+    start-date: ${ROSSTAT_START_DATE:2023-01-01}
     cron: "${ROSSTAT_CRON:0 0 0 * * *}"
     ignore-tls-errors: ${ROSSTAT_IGNORE_TLS_ERRORS:true}
     request-timeout: PT2M
   rustata:
     base-url: ${RUSTATA_BASE_URL:https://rustata.ru}
     dataset: fedstat/indicator_37426
-    start-date: ${RUSTATA_START_DATE:2026-01-01}
+    start-date: ${RUSTATA_START_DATE:2023-01-01}
     token: ${RUSTATA_TOKEN:}
     request-interval: PT6S
     page-size: 300

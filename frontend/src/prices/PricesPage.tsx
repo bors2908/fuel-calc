@@ -129,6 +129,7 @@ export function PricesPage({ catalog }: { catalog: Catalog }) {
               market={page.sources.MARKET.trend}
               official={page.sources.OFFICIAL.trend}
               onObservation={setObservation}
+              serverDate={page.meta.serverDate}
             />
             {showComparison && (
               <Comparison

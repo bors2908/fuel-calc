@@ -23,7 +23,8 @@ class FuelPriceTrendService {
                 val row = available[date]
 
                 TrendPointDto(date, row?.price?.toPlainString(), row?.id?.toString(),
-                    if (row == null) MissingPriceReason.NO_OBSERVATION_FOR_PERIOD else null)
+                    if (row == null) MissingPriceReason.NO_OBSERVATION_FOR_PERIOD else null,
+                    row?.forecast, if (row?.forecast != null) "FORECAST" else "OBSERVED")
             }
             val status = when {
                 available.isEmpty() -> PriceSeriesStatus.NO_DATA

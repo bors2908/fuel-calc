@@ -170,7 +170,7 @@ class BusinessApiTest {
 
         assertEquals("WEEKLY", official.path("frequency").asString())
         assertEquals("DAILY", market.path("frequency").asString())
-        assertEquals(setOf("date", "priceRubPerLiter", "observationId", "missingReason"), point.properties().map { it.key }.toSet())
+        assertEquals(setOf("kind", "date", "priceRubPerLiter", "observationId", "missingReason"), point.properties().map { it.key }.toSet())
         assertEquals(false, official.has("context"))
         assertEquals(false, official.path("overview").has("meta"))
         assertEquals(false, official.path("comparison").has("snapshotId"))
@@ -452,6 +452,76 @@ class BusinessApiTest {
             .path("latestPrice").path("priceRubPerLiter").asString())
         assertEquals("NO_DATA", monday.path("sources").path("OFFICIAL").path("comparison").path("status").asString())
         assertEquals(0, monday.path("sources").path("OFFICIAL").path("trend").path(0).path("points").size())
+    }
+
+    @Test
+    fun testForecastSharesOfficialGrowthAndWeeklyDatesWithMarketAndRefuelingWithoutPersistence() {
+        for ((region, current) in listOf("A" to "100.00", "B" to "200.00")) {
+            fixture.price(region, "100.00", "2023-10-23")
+            fixture.price(region, "100.00", "2023-10-30")
+            fixture.price(region, "100.00", "2024-10-21")
+            fixture.price(region, "110.00", "2024-10-28")
+            fixture.price(region, "100.00", "2025-10-20")
+            fixture.price(region, "120.00", "2025-10-27")
+            fixture.price(region, current, "2026-10-26")
+            fixture.price(region, current.toBigDecimal().multiply("1.5".toBigDecimal()).toPlainString(),
+                "2026-10-26", SourceProvider.BENZUP)
+        }
+        fixture.price("A", "999.00", "2025-10-27", SourceProvider.BENZUP)
+        entities.flush()
+
+        val before = jdbc.queryForObject("SELECT COUNT(*) FROM fuel_prices", Long::class.java)
+        val response = page(mapOf("filterDateFrom" to "2026-11-02", "filterDateTo" to "2026-11-04"))
+        val official = response.path("sources").path("OFFICIAL").path("trend").path(0).path("points").path(0)
+        val market = response.path("sources").path("MARKET").path("trend").path(0).path("points").path(0)
+
+        assertEquals("FORECAST", official.path("kind").asString())
+        assertEquals("2026-11-02", official.path("date").asString())
+        assertEquals(official.path("date"), market.path("date"))
+        assertEquals("110.00", official.path("priceRubPerLiter").asString())
+        assertEquals("165.00", market.path("priceRubPerLiter").asString())
+        assertTrue(official.path("observationId").isNull)
+        assertTrue(market.path("observationId").isNull)
+        assertEquals("10.000000", official.path("forecast").path("growthPercent").asString())
+        assertEquals(official.path("forecast").path("growthPercent"), market.path("forecast").path("growthPercent"))
+        assertEquals(3, official.path("forecast").path("historicalYears").size())
+
+        val withCurrentPrice = page(mapOf("filterDateFrom" to "2026-10-26", "filterDateTo" to "2026-11-04"))
+
+        assertEquals("10.00", withCurrentPrice.path("sources").path("OFFICIAL").path("overview")
+            .path("change").path("percent").asString())
+        assertEquals("10.00", withCurrentPrice.path("sources").path("MARKET").path("overview")
+            .path("change").path("percent").asString())
+
+        val calculation = calculate(date = "2026-11-04")
+
+        assertEquals("WEEKLY", calculation.path("results").path(1).path("frequency").asString())
+        assertEquals("66000.00", calculation.path("results").path(0).path("baseTotalRub").asString())
+        assertEquals("99000.00", calculation.path("results").path(1).path("baseTotalRub").asString())
+        assertEquals(before, jdbc.queryForObject("SELECT COUNT(*) FROM fuel_prices", Long::class.java))
+        assertEquals(response.path("meta").path("dataVersion"), calculation.path("meta").path("dataVersion"))
+    }
+
+    @Test
+    fun testForecastRequiresHistoryAndCannotExceedOneCalendarYear() {
+        fixture.price("A", "72.50")
+        fixture.price("A", "80.00", provider = SourceProvider.BENZUP)
+
+        val response = page(mapOf("filterDateFrom" to "2027-10-26", "filterDateTo" to "2027-10-26"))
+        val point = response.path("sources").path("OFFICIAL").path("trend").path(0).path("points").path(0)
+
+        assertEquals("FORECAST", point.path("kind").asString())
+        assertTrue(point.path("priceRubPerLiter").isNull)
+        assertEquals("INSUFFICIENT_HISTORY", point.path("missingReason").asString())
+        assertEquals("NO_DATA", calculate(date = "2027-10-26").path("results").path(0).path("status").asString())
+
+        val rejected = mvc.perform(get("/api/v1/fuel-prices")
+            .param("baseRegionCode", "A").param("filterRegionCode", "A").param("filterFuelType", "DIESEL")
+            .param("filterDateFrom", "2026-10-26").param("filterDateTo", "2027-10-27")).andReturn()
+
+        assertEquals(400, rejected.response.status)
+        assertTrue(rejected.response.contentAsString.contains("FORECAST_HORIZON_EXCEEDED"))
+        assertTrue(calculate(date = "2027-10-27", status = 400).toString().contains("FORECAST_HORIZON_EXCEEDED"))
     }
 
     private fun page(parameters: Map<String, String> = emptyMap()): JsonNode =

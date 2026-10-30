@@ -161,6 +161,11 @@ export function Calculator({
                               : `${signed(row.differenceRub)} ₽ к моему региону`}
                         </small>
                         <SourceLabel source={row.price.source} />
+                        {row.price.forecast && (
+                          <small>
+                            Прогноз на неделю · база {date(row.price.forecast.baseDate)}
+                          </small>
+                        )}
                       </div>
                     ))}
                   </>
@@ -168,7 +173,9 @@ export function Calculator({
                   <p className="empty-calculation">
                     {item.status === "NO_COMMON_PERIOD"
                       ? "Нет общей даты для выбранных регионов. Измените дату заправки или состав регионов."
-                      : "Нет цен для расчёта на выбранную дату или ранее."}
+                      : result.context.dateTo > result.meta.serverDate
+                        ? "Недостаточно официальной истории или текущих цен для прогноза."
+                        : "Нет цен для расчёта на выбранную дату или ранее."}
                   </p>
                 )}
               </section>
@@ -189,6 +196,14 @@ export function Calculator({
         <p className="calculation-disclaimer">
           Оценки по Росстату и рыночному индексу BenzUp. Даты источников могут различаться.
           Доставка, скидки и условия поставщика не учтены.
+          {result && result.context.dateTo > result.meta.serverDate && (
+            <>
+              {" "}
+              Будущая стоимость рассчитана по прогнозу сезонной исторической динамики Росстата.
+              Резкие изменения рынка и длинный горизонт повышают неопределённость; фактическая
+              стоимость может отличаться.
+            </>
+          )}
         </p>
       </div>
     </section>

@@ -14,7 +14,13 @@ export function PriceValue({
   onObservation?: (id: string) => void;
 }) {
   if (price.status === "missing") {
-    return <span className="muted">Нет данных за период</span>;
+    return (
+      <span className="muted">
+        {price.reason === "INSUFFICIENT_HISTORY"
+          ? "Недостаточно истории для прогноза"
+          : "Нет данных за период"}
+      </span>
+    );
   }
   return (
     <div className="price-value">
@@ -26,10 +32,18 @@ export function PriceValue({
       </strong>
       <span>
         {date(price.date)}
-        {price.source === "OFFICIAL" && " · недельное наблюдение"}
+        {price.forecast
+          ? " · прогноз на неделю"
+          : price.source === "OFFICIAL" && " · недельное наблюдение"}
       </span>
       <SourceLabel source={price.source} />
-      {onObservation && (
+      {price.forecast && (
+        <small>
+          Прогноз · база {date(price.forecast.baseDate)} · аналоги:{" "}
+          {price.forecast.historicalYears.join(", ")} · динамика Росстата
+        </small>
+      )}
+      {onObservation && price.observationId && (
         <ObservationButton
           id={price.observationId}
           onObservation={onObservation}

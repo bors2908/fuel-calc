@@ -5,6 +5,10 @@ import ge.becrin.fuelcalc.archive.service.ArchiveReadService
 import ge.becrin.fuelcalc.prices.ComparisonStatus
 import ge.becrin.fuelcalc.prices.jpa.PriceQueryExecutor
 import ge.becrin.fuelcalc.prices.model.PriceReadContext
+import ge.becrin.fuelcalc.prices.model.SourcePriceRows
+import ge.becrin.fuelcalc.prices.model.ComparisonSnapshot
+import ge.becrin.fuelcalc.prices.PriceFrequency
+import ge.becrin.fuelcalc.prices.forecast.PriceForecastService
 import ge.becrin.fuelcalc.prices.service.ComparisonAnalyzer
 import ge.becrin.fuelcalc.prices.service.ComparisonConverter
 import ge.becrin.fuelcalc.prices.service.ComparisonResolver
@@ -42,7 +46,9 @@ class RefuelingCalculationService(
 
     private val converter: PriceContextConverter,
 
-    private val updates: SourceUpdateReader
+    private val updates: SourceUpdateReader,
+
+    private val forecast: PriceForecastService
 ) {
     fun calculate(input: RefuelingCalculateRequestDto): RefuelingCalculationDto =
         archive.read { meta ->
@@ -57,8 +63,19 @@ class RefuelingCalculationService(
                 serverDate = meta.serverDate
             )
             val bounds = query.pageBounds(selected)
+            val predicted = forecast.forecast(selected, meta.serverDate)
             val results = PriceSource.entries.map { source ->
-                calculateSource(PriceReadContext(selected, source, bounds[source].orEmpty()), volume)
+                val context = PriceReadContext(selected, source, bounds[source].orEmpty())
+                val snapshot =
+                    if (selection.date > meta.serverDate) {
+                        resolver.resolveLoaded(selected, SourcePriceRows(predicted[source].orEmpty()))
+                    } else {
+                        val first = context.bounds.values.minOfOrNull { it.first } ?: selected.until
+
+                        resolver.resolve(selected.copy(from = minOf(first, selected.until)), source)
+                    }
+
+                calculateSource(context, volume, snapshot, selection.date > meta.serverDate)
             }
 
             RefuelingCalculationDto(meta, converter.page(selected), volume.setScale(2).toPlainString(), "RUB", results, updates.read())
@@ -66,13 +83,14 @@ class RefuelingCalculationService(
 
     private fun calculateSource(
         context: PriceReadContext,
-        volume: BigDecimal
+        volume: BigDecimal,
+        snapshot: ComparisonSnapshot,
+        predicted: Boolean
     ): RefuelingSourceCalculationDto {
-        val first = context.bounds.values.minOfOrNull { it.first } ?: context.selection.until
-        val snapshot = resolver.resolve(context.selection.copy(from = minOf(first, context.selection.until)), context.source)
+        val frequency = if (predicted) PriceFrequency.WEEKLY else context.source.frequency
 
         if (snapshot.status != ComparisonStatus.AVAILABLE && snapshot.status != ComparisonStatus.SINGLE_REGION) {
-            return RefuelingSourceCalculationDto(context.source, context.source.frequency, snapshot.status, null, null)
+            return RefuelingSourceCalculationDto(context.source, frequency, snapshot.status, null, null)
         }
 
         val totals = calculator.totals(volume, snapshot.rows.associate { it.region.okatoCode to it.price })
@@ -99,7 +117,7 @@ class RefuelingCalculationService(
 
         return RefuelingSourceCalculationDto(
             source = context.source,
-            frequency = context.source.frequency,
+            frequency = frequency,
             status = snapshot.status,
             baseTotalRub = base.toPlainString(),
             comparison = comparison

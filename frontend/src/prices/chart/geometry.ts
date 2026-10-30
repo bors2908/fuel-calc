@@ -44,13 +44,50 @@ export function seriesPath(
       previous = null;
     } else {
       const time = Date.parse(point.date);
-      const connected =
-        previous !== null && time - previous <= sourceInfo[series.source].intervalDays * dayMs;
+      const intervalDays = point.kind === "FORECAST" ? 7 : sourceInfo[series.source].intervalDays;
+      const connected = previous !== null && time - previous <= intervalDays * dayMs;
       path += `${connected ? "L" : "M"}${coordinates.x(point.date)},${coordinates.y(Number(point.priceRubPerLiter))} `;
       previous = time;
     }
   }
-  if (series.source === "OFFICIAL" && previous !== null && previous < Date.parse(until)) {
+  if (
+    (series.source === "OFFICIAL" || series.points.at(-1)?.kind === "FORECAST") &&
+    previous !== null &&
+    previous < Date.parse(until)
+  ) {
+    path += `H${coordinates.x(until)} `;
+  }
+  return path;
+}
+
+export function forecastSeriesPath(
+  series: ChartSeries,
+  coordinates: Pick<ReturnType<typeof chartGeometry>, "x" | "y">,
+  from: string,
+  until: string,
+  serverDate: string,
+): string {
+  const points = series.points.filter((point) => point.kind === "FORECAST");
+  if (points.length === 0) {
+    return "";
+  }
+  const basis = points.find((point) => point.forecast)?.forecast;
+  const actual = series.points.filter((point) => point.kind !== "FORECAST").at(-1);
+  const basePrice = basis?.basePriceRubPerLiter ?? actual?.priceRubPerLiter;
+  let path =
+    from <= serverDate && typeof basePrice === "string"
+      ? `M${coordinates.x(serverDate)},${coordinates.y(Number(basePrice))} `
+      : "";
+  for (const point of points) {
+    if (point.priceRubPerLiter === null) {
+      continue;
+    }
+    const x = coordinates.x(point.date);
+    const y = coordinates.y(Number(point.priceRubPerLiter));
+    path += `${path ? "L" : "M"}${x},${y} `;
+  }
+  const last = points.at(-1);
+  if (last && last.priceRubPerLiter !== null && last.date < until) {
     path += `H${coordinates.x(until)} `;
   }
   return path;
